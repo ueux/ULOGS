@@ -1,8 +1,12 @@
-import { Pool } from '@neondatabase/serverless';
+import { neonConfig, Pool } from '@neondatabase/serverless';
 import { Global, Module } from '@nestjs/common';
 import { drizzle } from 'drizzle-orm/neon-serverless';
 import * as schema from './schema';
+import ws from 'ws';
+
 export const DRIZZLE_DB = 'DRIZZLE_DB';
+neonConfig.webSocketConstructor = ws;
+
 @Global()
 @Module({
   providers: [

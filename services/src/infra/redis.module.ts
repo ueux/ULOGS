@@ -30,6 +30,7 @@ export interface CacheInterface {
         redis.on('error', (err) => console.error('Redis error', err));
         return redis;
       },
+      inject: [ConfigService],
     },
   ],
   exports: [REDIS_CLIENT],
