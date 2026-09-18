@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "list_api_keys_authenticated_user",
+    "description": "Verify that an authenticated user can successfully retrieve a list of their own API keys by sending a GET request to /api/v1/api-keys with a valid Clerk bearer token, receiving a 200 response with an array of API keys."
+  },
+  {
+    "id": "TC002",
+    "title": "create_api_key_within_limit",
+    "description": "Verify that an authenticated user can create a new API key when they have fewer than five active keys by sending a POST request to /api/v1/api-keys with a valid Clerk bearer token, receiving a 201 response containing the plaintext API key shown once."
+  },
+  {
+    "id": "TC003",
+    "title": "create_api_key_exceeding_limit",
+    "description": "Verify that an authenticated user attempting to create a new API key after reaching the maximum of five active keys receives a 400 response indicating active-key limit exceeded."
+  },
+  {
+    "id": "TC004",
+    "title": "inspect_api_key_owned_by_user",
+    "description": "Verify that an authenticated user can retrieve the last-used timestamp of an API key they own by sending a GET request to /api/v1/api-keys/:id with a valid Clerk bearer token, receiving a 200 response with last_used_at metadata."
+  },
+  {
+    "id": "TC005",
+    "title": "revoke_api_key_owned_by_user",
+    "description": "Verify that an authenticated user can revoke an API key they own by sending a DELETE request to /api/v1/api-keys/:id with a valid Clerk bearer token, receiving a 200 empty success response."
+  },
+  {
+    "id": "TC006",
+    "title": "regenerate_api_key_owned_by_user",
+    "description": "Verify that an authenticated user can regenerate an API key they own by sending a POST request to /api/v1/api-keys/:id/regenerate with a valid Clerk bearer token, receiving a 201 response containing the new plaintext API key shown once."
+  },
+  {
+    "id": "TC007",
+    "title": "unauthenticated_access_to_api_key_listing",
+    "description": "Verify that accessing GET /api/v1/api-keys without authentication returns a 401 Unauthorized response."
+  },
+  {
+    "id": "TC008",
+    "title": "unauthenticated_access_to_api_key_creation",
+    "description": "Verify that attempting to create an API key via POST /api/v1/api-keys without authentication returns a 401 Unauthorized response."
+  },
+  {
+    "id": "TC009",
+    "title": "unauthenticated_access_to_api_key_inspection",
+    "description": "Verify that accessing GET /api/v1/api-keys/:id without authentication or with an invalid token returns a 401 Unauthorized response."
+  },
+  {
+    "id": "TC010",
+    "title": "unauthorized_access_to_api_key_revocation_and_regeneration",
+    "description": "Verify that attempting to revoke or regenerate an API key not owned by the authenticated user or without authentication returns a 401 Unauthorized response."
+  }
+]

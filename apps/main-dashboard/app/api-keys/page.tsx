@@ -26,7 +26,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { getToken, useUser } from "@clerk/nextjs";
-import { QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 
 
@@ -53,7 +53,7 @@ export default function Page() {
 
   const { isLoaded, isSignedIn } = useUser();
   const queryClient = useQueryClient();
-  const { data: apiKeysData, isLoading } = useQuery({
+  const { data: apiKeysData = [], isLoading, isError } = useQuery({
     queryKey: ["api-keys"],
     queryFn: async () => {
       const token = await getToken();
@@ -67,12 +67,19 @@ export default function Page() {
           }
         })
       const res = await response.json();
-      return res;
+      if (!response.ok) {
+        throw new Error(
+          typeof res?.message === "string"
+            ? res.message
+            : "Unable to load API keys",
+        );
+      }
+      return Array.isArray(res) ? res : [];
     },
     enabled: isLoaded && isSignedIn
   })
 
-  const apiKeys = apiKeysData || [];
+  const apiKeys = Array.isArray(apiKeysData) ? apiKeysData : [];
   const createKey = async () => {
     setIsCreating(true);
     try {
@@ -84,31 +91,42 @@ export default function Page() {
           Authorization: `Bearer ${token}`
         },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        toast.error(error?.message ?? "Unable to generate API key");
+        return;
+      }
       const { key } = await res.json();
       setGeneratedSecret(key);
       setRevealOpen(true);
       queryClient.invalidateQueries({ queryKey: ["api-keys"] })
+    } catch {
+      toast.error("Unable to generate API key");
     } finally {
       setIsCreating(false);
     }
   };
 
-  const revokeSelected = async () => {
-    if (!selected.id) return;
+  const revokeKey = async (keyId: string) => {
     setIsRevoking(true)
     try {
       const token = await getToken();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_SERVER_URI}/api-keys/${selected.id}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SERVER_URI}/api-keys/${keyId}`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        toast.error(error?.message ?? "Unable to revoke API key");
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["api-keys"] })
       setSelected(null)
+    } catch {
+      toast.error("Unable to revoke API key");
     } finally {
       setIsRevoking(false)
     }
@@ -149,7 +167,22 @@ export default function Page() {
     return "just now";
   }, [apiKeys]);
 
-  if (isLoading) return null
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Loading saved API keys…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-md border p-6 text-sm text-muted-foreground">
+        Unable to load your API keys. Please try again.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -220,18 +253,11 @@ export default function Page() {
         )}
 
         {apiKeys.length === 0 ? (
-          isLoading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading saved API keys…
-            </div>
-          ) : (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Key className="mr-2 h-4 w-4" />
-              No API keys created yet. Generate one to start using the OneMinute
-              Logs API.
-            </div>
-          )
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <Key className="mr-2 h-4 w-4" />
+            No API keys created yet. Generate one to start using the OneMinute
+            Logs API.
+          </div>
         ) : (
           <div className="relative">
             {/* Overlay spinner while refreshing keys list */}
@@ -255,9 +281,9 @@ export default function Page() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {apiKeys.map((k: any, idx: number) => (
+                {apiKeys.map((k: any) => (
                   <TableRow
-                    key={`${k.prefix}`}
+                    key={k.id}
                     className="cursor-pointer transition-colors hover:bg-white/5"
                     onClick={() => setSelected(k)}
                   >
@@ -283,27 +309,18 @@ export default function Page() {
                                   size="sm"
                                   className="rounded-lg"
                                   disabled={
-                                    activeCount <= 1 && k.status === "Active"
+                                    activeCount <= 1
                                   }
                                   onClick={async (e) => {
                                     e.stopPropagation();
-                                    if (k.name === "Default") {
-                                      toast.error(
-                                        "Cannot delete the system-generated Default API key",
-                                      );
-                                      return;
-                                    }
-                                    if (
-                                      activeCount <= 1 &&
-                                      k.status === "Active"
-                                    ) {
+                                    if (activeCount <= 1) {
                                       toast.error(
                                         "Cannot revoke the only active API key",
                                       );
                                       return;
                                     }
                                     setSelected(k);
-                                    await revokeSelected();
+                                    await revokeKey(k.id);
                                   }}
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -349,19 +366,19 @@ export default function Page() {
                           size="sm"
                           className="rounded-md"
                           disabled={
-                            (isRevoking && activeCount <= 1 &&
-                              selected.status === "Active")
+                            isRevoking || activeCount <= 1
                           }
-                          onClick={revokeSelected}
+                          onClick={() => revokeKey(selected.id)}
                         >
                           <Trash2 className="h-4 w-4" />
-                          {isRevoking?"Revoking":"Revoke"}
+                          {isRevoking ? "Revoking" : "Revoke"}
                         </Button>
                       </span>
                     </TooltipTrigger>
                     <TooltipContent sideOffset={6}>
-                      {selected.id ? activeCount <= 1 && selected.status === "Active"
-                        : "Cannot revoke the only active API key"}
+                      {activeCount <= 1
+                        ? "Cannot revoke the only active API key"
+                        : "Revoke this API key"}
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -379,8 +396,8 @@ export default function Page() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Status</span>
-                <span style={{ color: statusColors[selected.revoked_at !== null ? 'Active' : 'Revoke'] }}>
-                  {selected.revoked_at !== null ? 'Active' : 'Revoke'}
+                <span style={{ color: statusColors[selected.revoked_at === null ? 'Active' : 'Revoked'] }}>
+                  {selected.revoked_at === null ? 'Active' : 'Revoked'}
                 </span>
               </div>
             </div>
