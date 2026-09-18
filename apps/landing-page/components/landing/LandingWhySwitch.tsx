@@ -20,11 +20,11 @@ export function LandingWhySwitch() {
             <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
                 <div className="max-w-2xl mb-10">
                     <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-50">
-                        Why developers switch to OneMinute Logs.
+                        Why developers switch to ULogs.
                     </h2>
                     <p className="mt-3 text-sm sm:text-base text-slate-300">
                         See at a glance how life looks before and after you plug in
-                        OneMinute Logs.
+                        ULogs.
                     </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -35,7 +35,7 @@ export function LandingWhySwitch() {
                                 <XIcon className="h-3.5 w-3.5 text-rose-400" />
                             </div>
                             <span className="text-sm font-semibold tracking-tight text-slate-100">
-                                Without OneMinute Logs
+                                Without ULogs
                             </span>
                         </div>
                         <ul className="space-y-3 text-sm text-slate-400">
@@ -60,7 +60,7 @@ export function LandingWhySwitch() {
                                 <Check className="h-3.5 w-3.5 text-sky-400" />
                             </div>
                             <span className="text-sm font-semibold tracking-tight text-slate-100">
-                                With OneMinute Logs
+                                With ULogs
                             </span>
                         </div>
                         <ul className="space-y-3 text-sm text-slate-200">

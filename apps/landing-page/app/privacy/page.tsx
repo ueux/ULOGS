@@ -4,7 +4,7 @@ import { makePageMetadata } from "@/lib/seo"
 
 export const metadata = makePageMetadata({
   title: "Privacy Policy",
-  description: "How OneMinute Logs collects, uses, and protects your information.",
+  description: "How ULogs collects, uses, and protects your information.",
   path: "/privacy",
 });
 
@@ -21,7 +21,7 @@ const Page = () => {
               Privacy Policy
             </h1>
             <p className="text-white/60!">
-              How OneMinute Logs collects, uses, shares, and protects your information.
+              How ULogs collects, uses, shares, and protects your information.
             </p>
             <p className="text-xs text-white/40!">
               Applies to the website, dashboard, SDKs, and APIs.
@@ -33,7 +33,7 @@ const Page = () => {
             <div className="space-y-2">
               <h2 className="text-lg font-semibold text-white">Overview & Scope</h2>
               <p className="text-sm text-white/70!">
-                This policy covers personal information we process when you use OneMinute Logs,
+                This policy covers personal information we process when you use ULogs,
                 including our site, dashboard, SDKs, and APIs. “Personal information” means any data
                 that identifies or could reasonably be linked to an individual.
               </p>

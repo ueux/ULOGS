@@ -15,7 +15,7 @@ const testimonials = [
     name: "Mike Chen",
     handle: "@mike_builds",
     quote:
-      "OneMinute Logs saved me hours of debugging on launch day. I finally understood what my API was doing.",
+      "ULogs saved me hours of debugging on launch day. I finally understood what my API was doing.",
     initials: "MC",
     avatar: "https://i.pravatar.cc/160?img=15",
   },
@@ -77,7 +77,7 @@ export function LandingTestimonials() {
     <section className="border-b border-slate-900/80 bg-slate-950 overflow-hidden">
       <div className="py-16 sm:py-24">
         <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-50 text-center mb-8 md:mb-16 px-4">
-          Developers who ship fast love OneMinute Logs.
+          Developers who ship fast love ULogs.
         </h2>
 
         <div className="group relative flex flex-col gap-6 mask-linear-fade w-[95%] md:w-[calc(100%-8rem)] mx-auto">

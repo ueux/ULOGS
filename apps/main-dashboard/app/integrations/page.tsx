@@ -66,7 +66,7 @@ export default function Page() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Integrations</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Connect OneMinute Logs to your favorite frameworks
+          Connect ULogs to your favorite frameworks
         </p>
       </div>
 
@@ -112,12 +112,11 @@ export default function Page() {
               <div className="h-32 rounded-lg border border-white/5 bg-white/2 px-5 py-4 opacity-70">
                 <div className="flex flex-col h-full">
                   <div
-                    className={`h-12 w-12 rounded-lg border border-white/5 ${
-                      integration.name === "Remix" ||
-                      integration.name === "Django"
+                    className={`h-12 w-12 rounded-lg border border-white/5 ${integration.name === "Remix" ||
+                        integration.name === "Django"
                         ? "bg-black/90"
                         : "bg-white"
-                    } flex items-center justify-center p-2.5 mb-3`}
+                      } flex items-center justify-center p-2.5 mb-3`}
                   >
                     <Image
                       src={integration.logo}

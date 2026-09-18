@@ -22,7 +22,7 @@ const satoshi = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "OneMinute Logs",
+  title: "ULogs",
   description: "Production-ready logs in under a minute.",
 };
 

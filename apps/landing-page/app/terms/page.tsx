@@ -4,7 +4,7 @@ import { makePageMetadata } from "@/lib/seo"
 
 export const metadata = makePageMetadata({
   title: "Terms of Service",
-  description: "The rules that govern your use of OneMinute Logs.",
+  description: "The rules that govern your use of ULogs.",
   path: "/terms",
 });
 
@@ -20,7 +20,7 @@ const Page = () => {
               Terms of Service
             </h1>
             <p className="text-white/60! pb-2">
-              These terms govern your use of OneMinute Logs. Please read them
+              These terms govern your use of ULogs. Please read them
               carefully.
             </p>
           </header>
@@ -147,7 +147,7 @@ const Page = () => {
                 Governing Law & Jurisdiction
               </h2>
               <p className="text-sm text-white/70!">
-                These Terms and your use of OneMinute Logs are governed by the laws of the United States of America.
+                These Terms and your use of ULogs are governed by the laws of the United States of America.
                 Where relevant, applicable state laws may also apply. You agree that any dispute arising out of or
                 relating to the service will be resolved in competent courts within the United States, and you consent
                 to personal jurisdiction and venue in those courts.

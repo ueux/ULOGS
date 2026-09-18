@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const siteUrl = "https://www.oneminutelogs.com";
 
-export const brand = "OneMinute Logs";
+export const brand = "ULogs";
 export const defaultDescription = "Production-ready logs in under a minute.";
 
 const ogImage = `${siteUrl}/og.png`;
