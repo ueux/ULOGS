@@ -19,6 +19,7 @@ ULogs is currently under active development. This repository contains the landin
 - [Configuration](#configuration)
 - [Getting started](#getting-started)
 - [Available commands](#available-commands)
+- [SDK](#sdk)
 - [Backend API](#backend-api)
 - [Testing](#testing)
 - [Production considerations](#production-considerations)
@@ -36,14 +37,16 @@ ULogs is currently under active development. This repository contains the landin
 - Clerk bearer-token and API-key authentication paths.
 - PostgreSQL persistence through Neon and Drizzle ORM.
 - Redis-backed API-key caching and last-used tracking.
+- Local ClickHouse, ClickHouse UI, and NATS infrastructure through Docker Compose.
+- Initial `@ulogs/next` SDK package with typed log payloads, buffered delivery, and API-key authentication headers.
 - TestSprite coverage for the API-key service, including authenticated flows where test credentials are available and unauthenticated contract checks.
 
 ### In progress
 
-- Log ingestion and ClickHouse persistence. The ClickHouse client module is currently a placeholder.
+- Log ingestion and ClickHouse persistence. The ClickHouse schema and container are present, but the client wiring and `/logs/send` API are not complete.
 - Production deployment and operational observability.
 - Automated CI quality gates and release workflows.
-- Final API contracts, SDK packaging, and broader integration coverage.
+- Final API contracts, SDK publishing workflow, and broader integration coverage.
 
 ## Architecture
 
@@ -55,14 +58,16 @@ flowchart LR
     API --> Clerk[Clerk\nToken verification]
     API --> Postgres[(Neon PostgreSQL\nDrizzle ORM)]
     API --> Redis[(Redis 7\nCache and locks)]
-    API -. planned .-> ClickHouse[(ClickHouse\nLog analytics)]
+    API -. in progress .-> ClickHouse[(ClickHouse\nLog analytics)]
+    API -. planned .-> NATS[NATS JetStream\nLog transport]
 ```
 
-The system is organized as three independently runnable applications:
+The repository contains three independently runnable applications plus an SDK package:
 
 - **Landing page:** public product and integration experience.
 - **Main dashboard:** authenticated product interface.
 - **Services:** NestJS API and persistence/authentication boundary.
+- **SDK:** `@ulogs/next`, a typed Node/Next.js logging client under active development.
 
 ## Repository layout
 
@@ -75,7 +80,9 @@ The system is organized as three independently runnable applications:
 │   ├── src/
 │   ├── test/
 │   ├── drizzle/             # Generated database migrations
-│   └── docker-compose.yml   # Local Redis service
+│   └── docker-compose.yml   # Local Redis, ClickHouse, UI, and NATS services
+├── sdks/
+│   └── ulogs-next/           # Typed SDK package; private src, distributable dist
 ├── testsprite_tests/        # Generated API test plans, cases, and reports
 └── .vscode/                 # Local editor/MCP configuration
 ```
@@ -86,7 +93,7 @@ Each application has its own `package.json`, lockfile, TypeScript configuration,
 
 - Node.js 20 or newer (Node.js 24 is used in the current development environment).
 - npm 10 or newer.
-- Docker Desktop, for local Redis.
+- Docker Desktop, for local Redis, ClickHouse, ClickHouse UI, and NATS.
 - A Neon PostgreSQL database and connection string.
 - A Clerk application with a secret key for authenticated API requests.
 - A TestSprite account and API key only when running TestSprite MCP tests.
@@ -119,6 +126,16 @@ NEXT_PUBLIC_SERVER_URI=http://localhost:8080/api/v1
 
 The dashboard obtains a Clerk session token in the browser and sends it to the backend as a bearer token.
 
+### SDK: `sdks/ulogs-next`
+
+The SDK uses the local API by default. Override the endpoint for staging or production with:
+
+```dotenv
+ULOGS_BASE_URL=https://api.example.com/api/v1
+```
+
+The current transport reads `ULOGS_BASE_URL` at runtime and falls back to `http://localhost:8080/api/v1`.
+
 ### Landing page
 
 Review the landing-page authentication and configuration code before deployment. Do not copy production credentials into source control or frontend bundles unless the variable is explicitly intended to be public.
@@ -127,7 +144,7 @@ Review the landing-page authentication and configuration code before deployment.
 
 ### 1. Install dependencies
 
-Open three terminals, or run each command from its package directory:
+Open separate terminals, or run each command from its package directory:
 
 ```powershell
 cd services
@@ -138,21 +155,31 @@ npm install
 
 cd ..\landing-page
 npm install
+
+cd ..\..\sdks\ulogs-next
+npm install
 ```
 
 ### 2. Configure the backend
 
 Create `services/.env` using the template above and provide a valid Neon `DATABASE_URL` and Clerk secret. Ensure the database schema is available before starting authenticated API flows.
 
-### 3. Start Redis
+### 3. Start local infrastructure
 
 From the `services` directory:
 
 ```powershell
-docker compose up -d redis
+docker compose up -d
 ```
 
-Confirm the container is healthy before exercising cache-dependent endpoints.
+This starts:
+
+- Redis on `localhost:6379`
+- ClickHouse HTTP on `localhost:8123` and native protocol on `localhost:9000`
+- ClickHouse UI on `localhost:5521`
+- NATS client connections on `localhost:4222` and monitoring on `localhost:8222`
+
+Use `docker compose ps` to inspect container status and `docker compose down` to stop the stack.
 
 ### 4. Start the backend
 
@@ -209,6 +236,40 @@ If port `3000` is already in use by the dashboard, start the landing page on ano
 | `npm run start` | Serve a completed production build   |
 | `npm run lint`  | Run ESLint                           |
 
+### SDK (`sdks/ulogs-next`)
+
+| Command              | Purpose                                                  |
+| -------------------- | -------------------------------------------------------- |
+| `npm install`        | Install SDK development dependencies                     |
+| `npm run build`      | Compile JavaScript and declaration files                 |
+| `npm run clean`      | Remove `dist/` using the cross-platform `rimraf` tool    |
+| `npm pack --dry-run` | Preview the publishable package contents                 |
+| `npm publish`        | Rebuild through `prepublishOnly` and publish the package |
+
+The SDK keeps its TypeScript implementation under `src/` locally. The repository configuration is intentionally set up to ignore `src/` and publish/track compiled `dist/` artifacts instead.
+
+## SDK
+
+The current package is `@ulogs/next`. It exposes `createLogger`, `ULOGSTransport`, and the public log types.
+
+```typescript
+import { createLogger } from "@ulogs/next";
+
+const logger = createLogger({
+  apiKey: process.env.ONE_MINUTE_LOGS_API_KEY!,
+  appName: "orders-service",
+  environment: "production",
+});
+
+await logger.info({
+  message: "Order created",
+  service: "checkout",
+  importance: "low",
+});
+```
+
+The transport buffers logs and sends batches to `POST /logs/send` below the configured API base URL. That ingestion route is not implemented in the current NestJS service yet, so SDK delivery is currently an integration-in-progress rather than a production-ready path. Publish the SDK only from the private source workspace because the GitHub-facing package layout intentionally excludes `src/`.
+
 ## Backend API
 
 The backend uses a global `/api` prefix and URI versioning. The current API base URL is:
@@ -260,7 +321,9 @@ Before calling this project production-ready:
 - Align the production start script with the actual Nest build output.
 - Complete ClickHouse ingestion, retention, indexing, and query paths for log data.
 - Add structured logging, tracing, metrics, alerting, and error tracking.
+- Secure ClickHouse and NATS credentials/configuration; the local Compose file currently uses development defaults.
 - Add rate limiting and abuse protection to authentication and API-key endpoints.
+- Complete the SDK retry/error semantics and provide a documented ingestion contract before publishing it for production use.
 - Add CI checks for formatting, linting, type checking, migrations, unit tests, e2e tests, and dependency vulnerabilities.
 - Review CORS, Clerk token validation, ownership checks, and cache invalidation before deployment.
 - Use separate credentials and databases for development, staging, and production.
@@ -271,6 +334,7 @@ Before calling this project production-ready:
 - Rotate any credential that has been exposed in logs, chat, screenshots, commits, or configuration files.
 - Treat API-key plaintext values as one-time secrets.
 - Keep server-only credentials out of `NEXT_PUBLIC_*` variables and browser bundles.
+- Do not expose `x-api-key` values in client-side applications; the SDK is intended for server-side usage.
 - Prefer short-lived credentials and least-privilege database roles.
 - Report security issues privately to the project maintainers rather than opening a public issue with exploit details.
 

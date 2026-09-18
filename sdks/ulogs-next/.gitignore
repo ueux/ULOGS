@@ -7,12 +7,12 @@ pnpm-debug.log*
 
 # Build output
 # Keep dist/ tracked: it is the distributable package output.
-dist/
+# dist/
 lib/
 build/
 
 # Source code (Ignored to keep private)
-# src/
+src/
 
 # Environment variables
 .env
