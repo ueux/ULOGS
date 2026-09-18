@@ -34,7 +34,7 @@ export class AuthGaurd implements CanActivate {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
   private async trackApiKeyLastUsed(keyId: string) {
-    const lockKey = `ulog:api_key:last_used_lock:${VERSION}:${keyId}`;
+    const lockKey = `ulogs:api_key:last_used_lock:${VERSION}:${keyId}`;
 
     const ok = await this.redis.set(
       lockKey,
@@ -68,7 +68,7 @@ export class AuthGaurd implements CanActivate {
           return true;
         }
 
-        const rKeyDigest = `ulog:api_key:${VERSION}:${keyId}`;
+        const rKeyDigest = `ulogs:api_key:${VERSION}:${keyId}`;
         const rDigest = await this.redis.hgetall(rKeyDigest);
 
         if (rDigest?.invalid === '1') {

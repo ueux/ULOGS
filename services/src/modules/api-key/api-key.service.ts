@@ -67,7 +67,7 @@ export class APIKeyService {
       .update(api_key)
       .set({ revoked_at: new Date() })
       .where(and(eq(api_key.user_id, userId), eq(api_key.id, keyId)));
-    await this.redis.del(`ulog:api_key:${VERSION}:${keyId}`);
+    await this.redis.del(`ulogs:api_key:${VERSION}:${keyId}`);
     localCache.delete(`${VERSION}:${keyId}`);
   }
   async regenerateApiKey(userId: string, keyId: string) {
@@ -89,7 +89,7 @@ export class APIKeyService {
         last_used_at: new Date(),
       })
       .where(and(eq(api_key.id, keyId), eq(api_key.user_id, userId)));
-    await this.redis.del(`ulog:api_key:${VERSION}:${keyId}`);
+    await this.redis.del(`ulogs:api_key:${VERSION}:${keyId}`);
     localCache.delete(`${VERSION}:${keyId}`);
     return { key: plaintextKey };
   }
