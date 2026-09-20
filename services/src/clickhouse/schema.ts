@@ -2,6 +2,9 @@ import { clickhouse } from './client';
 
 export const createLogsTable = async () => {
   await clickhouse.command({
+    query:'CREATE DATABASE IF NOT EXISTS logs'
+  })
+  await clickhouse.command({
     query: `
             CREATE TABLE IF NOT EXISTS logs.events(
                 keyId String,
@@ -17,7 +20,7 @@ export const createLogsTable = async () => {
                 track Nullable(String),
                 security Nullable(String),
                 metrics Nullable(String),
-                timestamp DataTime DEFAULT now(),
+                timestamp DateTime DEFAULT now(),
                 ingested_at DateTime DEFAULT now()
             )
                 ENGINE =MergeTree()

@@ -1,4 +1,4 @@
-import { LogTimestamps } from "./log.js";
+import { LogTimestamps } from "./logs.js";
 import { LogMetrcis } from "./metrics.js";
 import { LogSecurity } from "./security.js";
 import { LogTrack } from "./track.js";

@@ -1,6 +1,10 @@
 import { getEnvConfig } from "../config/index.js";
 export class ULOGSTransport {
+    config;
     baseUrl;
+    apiKey;
+    appName;
+    environment;
     headers;
     buffer = [];
     timer = null;
@@ -8,8 +12,12 @@ export class ULOGSTransport {
     shuttingDown = false;
     isFlushing = false;
     constructor(config) {
+        this.config = config;
         const envConfig = getEnvConfig();
-        this.baseUrl = (config.baseUrl || envConfig.baseUrl).replace(/\/$/, "");
+        this.baseUrl = envConfig.baseUrl;
+        this.apiKey = config.apiKey;
+        this.appName = config.appName;
+        this.environment = config.environment;
         this.headers = {
             "Content-Type": "application/json",
             "x-api-key": config.apiKey,
@@ -25,15 +33,12 @@ export class ULOGSTransport {
             ...payload,
             ingested_at: Date.now(),
         });
-        this.scheduleFlush();
-    }
-    scheduleFlush() {
         if (!this.timer) {
             this.timer = setTimeout(() => this.flush(), this.flushInterval);
         }
     }
     setupGracefulShutdown() {
-        const shutdownHandler = async () => {
+        const shutdownHandler = async (signal) => {
             if (this.shuttingDown)
                 return;
             this.shuttingDown = true;
@@ -43,10 +48,13 @@ export class ULOGSTransport {
             catch (err) {
                 console.error("[ULOGSTransport] Flush during shutdown failed:", err);
             }
+            finally {
+                process.exit(0);
+            }
         };
-        process.on("beforeExit", shutdownHandler);
-        process.on("SIGINT", shutdownHandler);
-        process.on("SIGTERM", shutdownHandler);
+        process.on("beforeExit", () => shutdownHandler("beforeExit"));
+        process.on("SIGINT", () => shutdownHandler("SIGINT"));
+        process.on("SIGTERM", () => shutdownHandler("SIGTERM"));
     }
     async flush() {
         if (this.isFlushing)
@@ -62,22 +70,15 @@ export class ULOGSTransport {
             return;
         }
         try {
-            const response = await fetch(`${this.baseUrl}/logs/send`, {
+            await fetch(`${this.baseUrl}/logs/send`, {
                 method: "POST",
                 headers: this.headers,
                 body: JSON.stringify({ logs: batch }),
                 keepalive: true,
             });
-            if (!response.ok) {
-                this.buffer.unshift(...batch);
-                console.error(`[ULOGSTransport] Flush failed with HTTP ${response.status}`);
-                this.scheduleFlush();
-            }
         }
         catch (error) {
             console.error("ULOGSTransport flush failed:", error);
-            this.buffer.unshift(...batch);
-            this.scheduleFlush();
         }
         this.isFlushing = false;
     }

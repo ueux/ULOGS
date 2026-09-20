@@ -1,6 +1,10 @@
 import { LoggerConfig, LogPayload } from "../types/index.js";
 export declare class ULOGSTransport {
+    private config;
     private baseUrl;
+    private apiKey;
+    private appName;
+    private environment;
     private headers;
     private buffer;
     private timer;
@@ -9,7 +13,6 @@ export declare class ULOGSTransport {
     private isFlushing;
     constructor(config: LoggerConfig);
     send(payload: LogPayload): Promise<void>;
-    private scheduleFlush;
     private setupGracefulShutdown;
     private flush;
 }
