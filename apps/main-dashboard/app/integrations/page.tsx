@@ -14,7 +14,7 @@ const integrations = [
     name: "Next.js",
     description: "React framework for production",
     logo: NextJs,
-    docsUrl: "https://oneminutelogs.com/docs/nextjs",
+    docsUrl: "https://ulogs.com/docs/nextjs",
     available: true,
   },
   {
@@ -22,7 +22,7 @@ const integrations = [
     name: "Express.js",
     description: "Fast, unopinionated web framework",
     logo: ExpressJs,
-    docsUrl: "https://oneminutelogs.com/docs/express",
+    docsUrl: "https://ulogs.com/docs/express",
     available: true,
   },
   {
@@ -113,9 +113,9 @@ export default function Page() {
                 <div className="flex flex-col h-full">
                   <div
                     className={`h-12 w-12 rounded-lg border border-white/5 ${integration.name === "Remix" ||
-                        integration.name === "Django"
-                        ? "bg-black/90"
-                        : "bg-white"
+                      integration.name === "Django"
+                      ? "bg-black/90"
+                      : "bg-white"
                       } flex items-center justify-center p-2.5 mb-3`}
                   >
                     <Image

@@ -82,4 +82,60 @@ export class ULOGSTransport {
         }
         this.isFlushing = false;
     }
+    async get(filters) {
+        const headers = {
+            "x-api-key": this.apiKey,
+            ...(this.appName ? { "x-ulogs-app-name": this.appName } : {}),
+            ...(this.environment ? { "x-ulogs-env": this.environment } : {}),
+        };
+        const qs = filters && Object.keys(filters).length > 0
+            ? `?${new URLSearchParams(filters).toString()}`
+            : "";
+        const res = await fetch(`${this.baseUrl}/logs${qs}`, { headers });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(` OML get failed (${res.status}): ${text.slice(0, 200)}`);
+        }
+        return res.json();
+    }
+    stream(filters) {
+        const qs = new URLSearchParams(filters).toString();
+        const url = `${this.baseUrl}/logs/stream?${qs}`;
+        const headers = {
+            "x-api-key": this.apiKey,
+            ...(this.appName ? { "x-ulogs-app-name": this.appName } : {}),
+            ...(this.environment ? { "x-ulogs-env": this.environment } : {}),
+        };
+        const abortController = new AbortController();
+        const readable = new ReadableStream({
+            start: async (controller) => {
+                const res = await fetch(url, {
+                    headers,
+                    signal: abortController.signal,
+                });
+                if (!res.body) {
+                    controller.error(new Error("Upstream stream unavailable"));
+                    return;
+                }
+                const reader = res.body.getReader();
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done)
+                            break;
+                        if (value)
+                            controller.enqueue(value);
+                    }
+                    controller.close();
+                }
+                catch (error) {
+                    controller.error(error);
+                }
+            },
+            cancel() {
+                abortController.abort();
+            },
+        });
+        return { body: readable };
+    }
 }

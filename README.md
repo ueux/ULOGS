@@ -38,15 +38,17 @@ ULogs is currently under active development. This repository contains the landin
 - PostgreSQL persistence through Neon and Drizzle ORM.
 - Redis-backed API-key caching and last-used tracking.
 - Local ClickHouse, ClickHouse UI, and NATS infrastructure through Docker Compose.
+- NestJS log ingestion routes for batched send, list queries, and SSE streaming.
 - Initial `@ulogs/next` SDK package with typed log payloads, buffered delivery, and API-key authentication headers.
 - TestSprite coverage for the API-key service, including authenticated flows where test credentials are available and unauthenticated contract checks.
+- Verified TypeScript builds for both the backend service and the SDK package.
 
 ### In progress
 
-- Log ingestion and ClickHouse persistence. The ClickHouse schema and container are present, but the client wiring and `/logs/send` API are not complete.
+- Final production hardening, retention policy, and ClickHouse query optimization for log analytics.
 - Production deployment and operational observability.
 - Automated CI quality gates and release workflows.
-- Final API contracts, SDK publishing workflow, and broader integration coverage.
+- Final SDK publishing workflow and broader integration coverage.
 
 ## Architecture
 
@@ -268,7 +270,7 @@ await logger.info({
 });
 ```
 
-The transport buffers logs and sends batches to `POST /logs/send` below the configured API base URL. That ingestion route is not implemented in the current NestJS service yet, so SDK delivery is currently an integration-in-progress rather than a production-ready path. Publish the SDK only from the private source workspace because the GitHub-facing package layout intentionally excludes `src/`.
+The transport buffers logs and sends batches to `POST /logs/send` below the configured API base URL. The backend route exists in the NestJS service, and the SDK package builds successfully. Publish the SDK only from the private source workspace because the GitHub-facing package layout intentionally excludes `src/`.
 
 ## Backend API
 
@@ -287,6 +289,9 @@ All API-key routes require authentication through either a valid Clerk bearer to
 | `GET`    | `/api/v1/api-keys/:id`            | Retrieve last-used metadata for a key                    |
 | `DELETE` | `/api/v1/api-keys/:id`            | Revoke an owned key                                      |
 | `POST`   | `/api/v1/api-keys/:id/regenerate` | Generate a replacement secret for an owned key           |
+| `POST`   | `/api/v1/logs/send`               | Receive a batched payload of logs from the SDK           |
+| `GET`    | `/api/v1/logs`                    | Query historical logs for the authenticated user         |
+| `GET`    | `/api/v1/logs/stream`             | Open an SSE stream for live log delivery                 |
 
 API keys are stored as Argon2 hashes. The plaintext secret is not returned by listing endpoints and should be copied securely immediately after creation.
 

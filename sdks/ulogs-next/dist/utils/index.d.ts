@@ -15,4 +15,8 @@ export declare class ULOGSTransport {
     send(payload: LogPayload): Promise<void>;
     private setupGracefulShutdown;
     private flush;
+    get(filters?: Record<string, any>): Promise<any>;
+    stream(filters?: Record<string, any>): {
+        body: ReadableStream<Uint8Array>;
+    };
 }

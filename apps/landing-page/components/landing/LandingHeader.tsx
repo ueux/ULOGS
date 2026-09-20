@@ -118,7 +118,7 @@ export function LandingHeader() {
                       Settings
                     </DropdownMenuItem>
                   </Link>
-                  <Link href={"mailto:contact@oneminutelogs.com"}>
+                  <Link href={"mailto:contact@ulogs.com"}>
                     <DropdownMenuItem className="text-slate-200 hover:bg-slate-800! hover:text-white">
                       <LifeBuoy className="mr-2 h-4 w-4" />
                       Support

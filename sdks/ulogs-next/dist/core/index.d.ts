@@ -6,4 +6,8 @@ export declare function createLogger(config: LoggerConfig): {
     metric: (payload: Omit<LogPayload, "type">) => Promise<void>;
     audit: (payload: Omit<LogPayload, "type">) => Promise<void>;
     warning: (payload: Omit<LogPayload, "type">) => Promise<void>;
+    get: (filters?: Record<string, any>) => Promise<any>;
+    stream: (filters?: Record<string, any>) => {
+        body: ReadableStream<Uint8Array>;
+    };
 };

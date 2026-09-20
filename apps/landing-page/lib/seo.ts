@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-export const siteUrl = "https://www.oneminutelogs.com";
+export const siteUrl = "https://www.ulogs.com";
 
 export const brand = "ULogs";
 export const defaultDescription = "Production-ready logs in under a minute.";

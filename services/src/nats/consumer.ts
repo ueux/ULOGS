@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import { VERSION } from '../config';
 import { clickhouse } from '../clickhouse/client';
 import { initNatsStream } from './initStream';
+import { broadcastLogs } from '../sse/sseRegistry';
 
 const redis = new Redis({
   host: process.env.REDIS_HOST || '',
@@ -109,6 +110,8 @@ export async function startLogsConsumer() {
         values: transformed,
         format: 'JSONEachRow',
       });
+      broadcastLogs(transformed)
+
       msg.ack();
 
       if (now - lastBacklogUpdate > 1000) {

@@ -16,9 +16,9 @@ const steps = [
     title: "Install the package",
     description: "Add the SDK to your app with your favorite package manager.",
     icon: Package,
-    code: `npm install @oneminutelogs/next
+    code: `npm install @ulogs/next
 # or
-npm install @oneminutelogs/express`,
+npm install @ulogs/express`,
     language: "bash",
   },
   {
@@ -26,7 +26,7 @@ npm install @oneminutelogs/express`,
     title: "Initialize the logger",
     description: "Configure the logger with your API key.",
     icon: MousePointerClick,
-    code: `import { createLogger } from "@oneminutelogs/next";
+    code: `import { createLogger } from "@ulogs/next";
 
 export const log = createLogger({
   apiKey: process.env.ONE_MINUTE_LOGS_API_KEY!,
@@ -42,19 +42,19 @@ export const log = createLogger({
     icon: Monitor,
     code: `
 // Log success
-await log.send("User logged in", { 
+await log.send("User logged in", {
   type:"success",
-  email: session?.user?.email 
+  email: session?.user?.email
 });
 
 // Log info
-await log.info("User reseted password", { 
-  email: session?.user?.email 
+await log.info("User reseted password", {
+  email: session?.user?.email
 });
 
 // Log error
-await log.error("login failed", { 
-  email: session?.user?.email 
+await log.error("login failed", {
+  email: session?.user?.email
 });
 `,
     language: "typescript",
@@ -64,7 +64,7 @@ await log.error("login failed", {
     title: "Done",
     description: "That's it. No config, no servers, no YAML. Just clear logs.",
     icon: Sparkles,
-    code: `// Visit oneminutelogs.com/dashboard/live-logs
+    code: `// Visit ulogs.com/dashboard/live-logs
 // You'll see your events streaming live!
 // Or brodcast live logs via our SDK inside your
 // application dashboard
@@ -99,28 +99,25 @@ export function LandingSetup() {
               <div
                 key={step.id}
                 onClick={() => setActiveStep(index)}
-                className={`group relative flex gap-5 p-5 rounded-xl transition-all duration-300 cursor-pointer border ${
-                  activeStep === index
+                className={`group relative flex gap-5 p-5 rounded-xl transition-all duration-300 cursor-pointer border ${activeStep === index
                     ? "bg-slate-900/50 border-sky-500/30 shadow-[0_0_20px_-5px_rgba(14,165,233,0.15)]"
                     : "bg-transparent border-transparent hover:bg-slate-900/30 hover:border-slate-800"
-                }`}
+                  }`}
               >
                 <div
-                  className={`shrink-0 h-10 w-10 rounded-full flex items-center justify-center border transition-colors duration-300 ${
-                    activeStep === index
+                  className={`shrink-0 h-10 w-10 rounded-full flex items-center justify-center border transition-colors duration-300 ${activeStep === index
                       ? "bg-sky-500/10 border-sky-500/50 text-sky-400"
                       : "bg-slate-900 border-slate-800 text-slate-500 group-hover:border-slate-700 group-hover:text-slate-400"
-                  }`}
+                    }`}
                 >
                   <step.icon className="h-5 w-5" />
                 </div>
                 <div>
                   <h3
-                    className={`text-lg font-semibold transition-colors duration-300 ${
-                      activeStep === index
+                    className={`text-lg font-semibold transition-colors duration-300 ${activeStep === index
                         ? "text-sky-400"
                         : "text-slate-200 group-hover:text-slate-100"
-                    }`}
+                      }`}
                   >
                     {step.title}
                   </h3>
@@ -170,10 +167,10 @@ export function LandingSetup() {
                             <span
                               className={
                                 line.trim().startsWith("//") ||
-                                line.trim().startsWith("#")
+                                  line.trim().startsWith("#")
                                   ? "text-slate-500 italic"
                                   : steps[activeStep].language === "bash" &&
-                                      line.trim().startsWith("npm")
+                                    line.trim().startsWith("npm")
                                     ? "text-sky-300"
                                     : "text-slate-300"
                               }
