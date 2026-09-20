@@ -12,6 +12,7 @@ import {
 import { Activity as ActivityIcon, Clipboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getStream } from "@ulogs/next";
 
 // type definitions and helpers (added)
 type LogLevel =
@@ -34,185 +35,7 @@ type LogEntry = {
   payload: Record<string, unknown>;
 };
 
-const STATIC_LOG_TAIL: LogEntry[] = [
-  {
-    id: "log-001",
-    ts: "2026-06-14T09:42:11.000Z",
-    level: "info",
-    source: "web",
-    message: "GET /api/projects returned 200 in 148ms",
-    payload: {
-      method: "GET",
-      route: "/api/projects",
-      status: 200,
-      durationMs: 148,
-      requestId: "req_7x2k91",
-    },
-  },
-  {
-    id: "log-002",
-    ts: "2026-06-14T09:42:18.000Z",
-    level: "debug",
-    source: "worker",
-    message: "Cache warmup skipped because latest snapshot is still fresh",
-    payload: {
-      cacheKey: "dashboard:summary",
-      ageSeconds: 47,
-      thresholdSeconds: 60,
-    },
-  },
-  {
-    id: "log-003",
-    ts: "2026-06-14T09:42:24.000Z",
-    level: "warning",
-    source: "api",
-    message: "Stripe webhook retry scheduled after signature verification timeout",
-    payload: {
-      event: "invoice.payment_succeeded",
-      retryInSeconds: 30,
-      requestId: "wh_29af8d",
-    },
-  },
-  {
-    id: "log-004",
-    ts: "2026-06-14T09:42:31.000Z",
-    level: "success",
-    source: "jobs",
-    message: "Nightly usage aggregation completed successfully",
-    payload: {
-      processedAccounts: 182,
-      durationMs: 3128,
-      batchId: "batch_20260614",
-    },
-  },
-  {
-    id: "log-005",
-    ts: "2026-06-14T09:42:37.000Z",
-    level: "audit",
-    source: "auth",
-    message: "Admin user updated workspace billing settings",
-    payload: {
-      actorId: "usr_admin_01",
-      workspaceId: "ws_9h31x",
-      action: "billing.settings.update",
-    },
-  },
-  {
-    id: "log-006",
-    ts: "2026-06-14T09:42:44.000Z",
-    level: "metric",
-    source: "ingest",
-    message: "Log ingestion throughput sampled at 284 events/sec",
-    payload: {
-      eventsPerSecond: 284,
-      region: "sin1",
-      queueDepth: 12,
-    },
-  },
-  {
-    id: "log-007",
-    ts: "2026-06-14T09:42:51.000Z",
-    level: "error",
-    source: "api",
-    message: "POST /api/logs failed with 500 due to upstream timeout",
-    payload: {
-      method: "POST",
-      route: "/api/logs",
-      status: 500,
-      durationMs: 10021,
-      upstream: "events-service",
-    },
-  },
-  {
-    id: "log-008",
-    ts: "2026-06-14T09:42:59.000Z",
-    level: "info",
-    source: "frontend",
-    message: "User opened the live logs dashboard",
-    payload: {
-      userId: "usr_52plq",
-      workspaceId: "ws_9h31x",
-      pathname: "/live-logs",
-    },
-  },
-  {
-    id: "log-009",
-    ts: "2026-06-14T09:43:05.000Z",
-    level: "warning",
-    source: "cdn",
-    message: "Asset miss rate exceeded warning threshold for /dashboard bundle",
-    payload: {
-      asset: "/_next/static/chunks/dashboard.js",
-      missRate: 0.13,
-      threshold: 0.1,
-    },
-  },
-  {
-    id: "log-010",
-    ts: "2026-06-14T09:43:13.000Z",
-    level: "success",
-    source: "deploy",
-    message: "Main dashboard deployed to production",
-    payload: {
-      commit: "3f19b7a",
-      environment: "production",
-      durationMs: 84211,
-    },
-  },
-];
 
-const LIVE_LOG_TEMPLATES: Omit<LogEntry, "id" | "ts">[] = [
-  {
-    level: "info",
-    source: "web",
-    message: "GET /api/session returned 200 in 54ms",
-    payload: {
-      method: "GET",
-      route: "/api/session",
-      status: 200,
-      durationMs: 54,
-    },
-  },
-  {
-    level: "debug",
-    source: "worker",
-    message: "Processing background sync job",
-    payload: {
-      queue: "sync",
-      attempt: 1,
-      workerId: "worker-3",
-    },
-  },
-  {
-    level: "warning",
-    source: "cdn",
-    message: "Cache miss spike detected for dashboard assets",
-    payload: {
-      assetGroup: "dashboard",
-      missRate: 0.12,
-    },
-  },
-  {
-    level: "error",
-    source: "api",
-    message: "POST /api/logs failed with upstream timeout",
-    payload: {
-      method: "POST",
-      route: "/api/logs",
-      status: 500,
-      upstream: "events-service",
-    },
-  },
-  {
-    level: "success",
-    source: "jobs",
-    message: "Usage aggregation batch completed",
-    payload: {
-      batch: "usage-rollup",
-      processed: 42,
-    },
-  },
-];
 
 // Color scheme mapping (matches your spec)
 const levelColor: Record<LogLevel, string> = {
@@ -225,46 +48,19 @@ const levelColor: Record<LogLevel, string> = {
   metric: "#22D3EE", // Cyan
 };
 
-function buildLiveLog(index: number): LogEntry {
-  const template = LIVE_LOG_TEMPLATES[index % LIVE_LOG_TEMPLATES.length];
-
-  return {
-    id: `live-log-${index}-${Date.now()}`,
-    ts: new Date().toISOString(),
-    level: template.level,
-    source: template.source,
-    message: template.message,
-    payload: {
-      ...template.payload,
-      tick: index + 1,
-    },
-  };
-}
 
 export default function LiveLogsPage() {
-  const [logs, setLogs] = React.useState<LogEntry[]>(STATIC_LOG_TAIL);
+  const { data: logs } = getStream()
+  const [autoScroll, setAutoScroll] = React.useState(true);
   const [filterLevel, setFilterLevel] = React.useState<"All" | LogLevel>("All");
   const [search, setSearch] = React.useState("");
   const [selected, setSelected] = React.useState<LogEntry | null>(null);
   const streamRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    let tick = 0;
-
-    const interval = window.setInterval(() => {
-      setLogs((currentLogs) => {
-        const nextLog = buildLiveLog(tick);
-        tick += 1;
-        return [...currentLogs, nextLog];
-      });
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, []);
-
-  React.useEffect(() => {
+    if(!autoScroll)return
     streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight });
-  }, [logs.length]);
+  }, [logs,autoScroll]);
 
   const filteredLogs: LogEntry[] = React.useMemo(() => {
     return logs.filter((l) => {

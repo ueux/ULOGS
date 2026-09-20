@@ -1,4 +1,5 @@
 import { getEnvConfig } from "../config/index.js";
+let shutdownHookRegistered = false;
 export class ULOGSTransport {
     config;
     baseUrl;
@@ -38,6 +39,10 @@ export class ULOGSTransport {
         }
     }
     setupGracefulShutdown() {
+        if (shutdownHookRegistered)
+            return;
+        shutdownHookRegistered = true;
+        process.setMaxListeners(Math.max(process.getMaxListeners(), 20));
         const shutdownHandler = async (signal) => {
             if (this.shuttingDown)
                 return;
@@ -94,7 +99,7 @@ export class ULOGSTransport {
         const res = await fetch(`${this.baseUrl}/logs${qs}`, { headers });
         if (!res.ok) {
             const text = await res.text();
-            throw new Error(` OML get failed (${res.status}): ${text.slice(0, 200)}`);
+            throw new Error(` ULOGS get failed (${res.status}): ${text.slice(0, 200)}`);
         }
         return res.json();
     }

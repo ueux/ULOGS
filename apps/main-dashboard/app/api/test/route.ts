@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
-    await logger.error({
-      message: "Something went wrong",
+    await logger.warning({
+      message: "Dont log the secrete",
       importance: "medium",
       service: "testing",
     });

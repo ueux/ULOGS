@@ -12,6 +12,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Play, XCircle, Search, Clipboard, Loader2 } from "lucide-react";
+import { getLogs } from "@ulogs/next";
 
 type ResultRow = {
   timestamp?: string;
@@ -25,108 +26,6 @@ type ResultRow = {
   [key: string]: any;
 };
 
-const STATIC_QUERY_RESULTS: ResultRow[] = [
-  {
-    timestamp: "2026-06-14T09:42:11.000Z",
-    type: "info",
-    appName: "web",
-    message: "GET /api/projects returned 200 in 148ms",
-    environment: "production",
-    importance: 2,
-    subsystem: "http",
-    operation: "GET /api/projects",
-  },
-  {
-    timestamp: "2026-06-14T09:42:18.000Z",
-    type: "warning",
-    appName: "billing",
-    message: "Stripe webhook retry scheduled after timeout",
-    environment: "production",
-    importance: 3,
-    subsystem: "payments",
-    operation: "webhook.retry",
-  },
-  {
-    timestamp: "2026-06-14T09:42:24.000Z",
-    type: "error",
-    appName: "api",
-    message: "POST /api/logs failed with upstream timeout",
-    environment: "production",
-    importance: 5,
-    subsystem: "ingest",
-    operation: "POST /api/logs",
-  },
-  {
-    timestamp: "2026-06-14T09:42:31.000Z",
-    type: "audit",
-    appName: "auth",
-    message: "Admin user updated workspace billing settings",
-    environment: "production",
-    importance: 4,
-    subsystem: "rbac",
-    operation: "billing.settings.update",
-  },
-  {
-    timestamp: "2026-06-14T09:42:37.000Z",
-    type: "metric",
-    appName: "ingest",
-    message: "Log ingestion throughput sampled at 284 events/sec",
-    environment: "production",
-    importance: 1,
-    subsystem: "pipeline",
-    operation: "throughput.sample",
-  },
-  {
-    timestamp: "2026-06-14T09:42:44.000Z",
-    type: "warning",
-    appName: "billing",
-    message: "Invoice export latency exceeded warning threshold",
-    environment: "staging",
-    importance: 3,
-    subsystem: "exports",
-    operation: "invoice.export",
-  },
-  {
-    timestamp: "2026-06-14T09:42:51.000Z",
-    type: "error",
-    appName: "api",
-    message: "Query execution timeout while reading logs",
-    environment: "development",
-    importance: 5,
-    subsystem: "queries",
-    operation: "logs.query",
-  },
-  {
-    timestamp: "2026-06-14T09:42:59.000Z",
-    type: "info",
-    appName: "dashboard",
-    message: "User opened the queries page",
-    environment: "production",
-    importance: 1,
-    subsystem: "ui",
-    operation: "page.view",
-  },
-  {
-    timestamp: "2026-06-14T09:43:05.000Z",
-    type: "error",
-    appName: "billing",
-    message: "Payment sync failed after upstream timeout",
-    environment: "production",
-    importance: 5,
-    subsystem: "sync",
-    operation: "payment.sync",
-  },
-  {
-    timestamp: "2026-06-14T09:43:13.000Z",
-    type: "info",
-    appName: "api",
-    message: "Scheduled cleanup job completed successfully",
-    environment: "production",
-    importance: 2,
-    subsystem: "jobs",
-    operation: "cleanup.run",
-  },
-];
 
 export default function Page() {
   const [filters, setFilters] = React.useState<{
@@ -137,8 +36,7 @@ export default function Page() {
     appName?: string;
     search?: string;
   }>({});
-  const isLoading = false;
-  const error = null;
+  const {data,isLoading,error} =getLogs(filters)
 
   const levelColor: Record<string, string> = {
     info: "#60A5FA",      // Blue
@@ -158,6 +56,13 @@ export default function Page() {
     "appName:api AND search:timeout",
     "type:warning AND appName:billing",
   ];
+  const normalizeLogs = React.useCallback((input:any):ResultRow[] => {
+    if (!input) return [];
+    if (Array.isArray(input)) return input as ResultRow[];
+    const obj = input as { logs?: any }
+    if (Array.isArray(obj.logs)) return obj.logs as ResultRow[];
+    return []
+  },[])
 
   // Normalize UI query tokens to server-supported filters
   const normalizeQuery = (q: string) =>
@@ -200,30 +105,9 @@ export default function Page() {
   }, []);
 
   const results: ResultRow[] = React.useMemo(() => {
-    const rows = STATIC_QUERY_RESULTS.filter((row) => {
-      const matchesType = filters.type
-        ? String(row.type || "").toLowerCase() === filters.type.toLowerCase()
-        : true;
-      const matchesEnv = filters.env
-        ? String(row.environment || "").toLowerCase() ===
-          filters.env.toLowerCase()
-        : true;
-      const matchesApp = filters.appName
-        ? String(row.appName || "").toLowerCase() ===
-          filters.appName.toLowerCase()
-        : true;
-      const matchesSearch = filters.search
-        ? `${row.message ?? ""} ${JSON.stringify(row)}`
-            .toLowerCase()
-            .includes(filters.search.toLowerCase())
-        : true;
-
-      return matchesType && matchesEnv && matchesApp && matchesSearch;
-    });
-
-    const limit = filters.limit ?? rows.length;
-    return rows.slice(0, limit);
-  }, [filters]);
+    const rows = normalizeLogs(data);
+    return rows ?? [];
+  }, [data,normalizeLogs]);
   const [selected, setSelected] = React.useState<ResultRow | null>(null);
 
   const runQuery = () => {
@@ -281,7 +165,7 @@ export default function Page() {
           <Button
             variant="ghost"
             onClick={clearQuery}
-            className="rounded-xl hover:bg-white/[0.02]"
+            className="rounded-xl hover:bg-white/2"
           >
             <XCircle className="h-4 w-4" />
             Clear
@@ -295,7 +179,7 @@ export default function Page() {
               <button
                 key={ex}
                 onClick={() => setQuery(ex)}
-                className="text-xs rounded-full border px-2 py-1 text-muted-foreground hover:bg-white/[0.03]"
+                className="text-xs rounded-full border px-2 py-1 text-muted-foreground hover:bg-white/3"
               >
                 {ex}
               </button>
@@ -386,7 +270,7 @@ export default function Page() {
           onClick={() => setSelected(null)}
         >
           <div
-            className="fixed right-0 top-0 h-full w-[420px] border-l bg-background p-4"
+            className="fixed right-0 top-0 h-full w-105 border-l bg-background p-4"
             style={{ background: "#0E1117" }}
             onClick={(e) => e.stopPropagation()}
           >
