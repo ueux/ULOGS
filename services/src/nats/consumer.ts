@@ -1,10 +1,11 @@
 import { consumerOpts } from 'nats';
 import { getNats } from '.';
 import Redis from 'ioredis';
-import { VERSION } from '../config';
+import { PLAN_REDIS_TTL_SEC, usageRediskey, VERSION } from '../config';
 import { clickhouse } from '../clickhouse/client';
 import { initNatsStream } from './initStream';
 import { broadcastLogs } from '../sse/sseRegistry';
+import { usageCache } from '../guards/usage.gaurd';
 
 const redis = new Redis({
   host: process.env.REDIS_HOST || '',
@@ -73,7 +74,7 @@ export async function startLogsConsumer() {
   for await (const msg of sub) {
     try {
       const data = jc.decode(msg.data);
-      const { keyId,userId, logs, serverReceivedAt } = data as any;
+      const { keyId, userId, logs, serverReceivedAt } = data as any;
       const now = Date.now();
 
       const transformed = logs.map((log: any) => {
@@ -110,7 +111,21 @@ export async function startLogsConsumer() {
         values: transformed,
         format: 'JSONEachRow',
       });
-      broadcastLogs(transformed)
+      const usageKey = usageRediskey(userId);
+      await redis.hincrby(usageKey, 'events_used', transformed.length);
+      await redis.expire(usageKey, PLAN_REDIS_TTL_SEC);
+      await redis.sadd(`ulogs:usage:dirty:${VERSION}`, userId);
+      const lrukey = `usage:${userId}`;
+      const cached = usageCache.get(lrukey);
+
+      if (cached) {
+        usageCache.set(lrukey, {
+          ...cached,
+          events_used: cached.events_used + transformed. length,
+        });
+      }
+
+      broadcastLogs(transformed);
 
       msg.ack();
 
