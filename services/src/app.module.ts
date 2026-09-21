@@ -8,6 +8,7 @@ import { CacheModule } from './infra/cache.module';
 import { RedisModule } from './infra/redis.module';
 import { LogsModule } from './modules/logs/logs.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     DatabaseModule,
     CacheModule,
     RedisModule,
-    LogsModule
+    LogsModule,
+    BillingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

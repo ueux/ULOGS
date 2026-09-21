@@ -28,7 +28,7 @@ import { verifyToken } from '@clerk/backend'
 const localCache = new LRUCache<string, CachedKey>({ max: 100_000 });
 
 @Injectable()
-export class AuthGaurd implements CanActivate {
+export class AuthGuard implements CanActivate {
   constructor(
     @Inject(DRIZZLE_DB) private db: NeonDatabase,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,

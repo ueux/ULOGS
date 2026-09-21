@@ -5,7 +5,7 @@ import { PLAN_REDIS_TTL_SEC, usageRediskey, VERSION } from '../config';
 import { clickhouse } from '../clickhouse/client';
 import { initNatsStream } from './initStream';
 import { broadcastLogs } from '../sse/sseRegistry';
-import { usageCache } from '../guards/usage.gaurd';
+import { usageCache } from '../guards/usage.guard';
 
 const redis = new Redis({
   host: process.env.REDIS_HOST || '',
@@ -121,7 +121,7 @@ export async function startLogsConsumer() {
       if (cached) {
         usageCache.set(lrukey, {
           ...cached,
-          events_used: cached.events_used + transformed. length,
+          events_used: cached.events_used + transformed.length,
         });
       }
 

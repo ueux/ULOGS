@@ -48,7 +48,7 @@ export const usageCache = new LRUCache<string, CachedUsage>({
 });
 
 @Injectable()
-export class UsageGaurd implements CanActivate {
+export class UsageGuard implements CanActivate {
   constructor(
     @Inject(DRIZZLE_DB) private db: NeonDatabase,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
