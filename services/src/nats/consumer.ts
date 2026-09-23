@@ -111,6 +111,14 @@ export async function startLogsConsumer() {
         values: transformed,
         format: 'JSONEachRow',
       });
+      await js.publish(
+        'logs.alert.evaluate',
+        jc.encode({
+          logs: transformed,
+          processedAt: Date.now(),
+        }),
+      );
+
       const usageKey = usageRediskey(userId);
       await redis.hincrby(usageKey, 'events_used', transformed.length);
       await redis.expire(usageKey, PLAN_REDIS_TTL_SEC);

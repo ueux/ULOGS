@@ -21,6 +21,7 @@ ULogs is currently under active development. This repository contains the landin
 - [Available commands](#available-commands)
 - [SDK](#sdk)
 - [Backend API](#backend-api)
+- [Billing and invoices](#billing-and-invoices)
 - [Testing](#testing)
 - [Production considerations](#production-considerations)
 - [Security](#security)
@@ -115,9 +116,17 @@ REDIS_PASSWORD=ulogs
 REDIS_DB=0
 REDIS_KEY_SECRET=<random-secret>
 CLERK_SECRET_KEY=<clerk-secret-key>
+STRIPE_SECRET_KEY=<stripe-secret-key>
+STRIPE_WEBHOOK_SECRET=<stripe-webhook-signing-secret>
+STRIPE_STARTER_PRICE_ID=<stripe-starter-price-id>
+STRIPE_PRO_PRICE_ID=<stripe-pro-price-id>
+STRIPE_BUSINESS_PRICE_ID=<stripe-business-price-id>
+APP_URL=http://localhost:3000
 ```
 
 `REDIS_KEY_SECRET` is used to derive API-key cache digests and should be a long, random value. Use a secret manager for shared or production environments.
+
+The Stripe price IDs must refer to recurring subscription prices in the same Stripe account as `STRIPE_SECRET_KEY`. `APP_URL` is used for Stripe Checkout and Billing Portal return URLs.
 
 ### Main dashboard: `apps/main-dashboard/.env`
 
@@ -294,6 +303,56 @@ All API-key routes require authentication through either a valid Clerk bearer to
 | `GET`    | `/api/v1/logs/stream`             | Open an SSE stream for live log delivery                 |
 
 API keys are stored as Argon2 hashes. The plaintext secret is not returned by listing endpoints and should be copied securely immediately after creation.
+
+## Billing and invoices
+
+The dashboard uses Stripe Checkout for paid plans and the Stripe Billing Portal for subscription management. Billing endpoints require a valid Clerk bearer token unless noted otherwise:
+
+| Method | Endpoint                   | Description                                                                                                      |
+| ------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/billing/current`  | Return the authenticated user's current plan                                                                     |
+| `GET`  | `/api/v1/billing/invoices` | List invoices saved for the authenticated user                                                                   |
+| `POST` | `/api/v1/billing`          | Create a Stripe Checkout session; send `{ "plan": "starter" }`, `{ "plan": "pro" }`, or `{ "plan": "business" }` |
+| `POST` | `/api/v1/billing/portal`   | Create a Stripe Billing Portal session for a paid user                                                           |
+| `POST` | `/api/v1/billing/webhook`  | Receive and verify Stripe webhook events                                                                         |
+
+Invoice records are persisted in the `payment_invoices` table when Stripe sends invoice events. The service resolves the invoice owner from Stripe metadata, the stored subscription ID, or the stored Stripe customer ID, then upserts the invoice by its Stripe invoice ID. This makes webhook retries safe and allows the dashboard's invoice table to display payment status, amounts, dates, and downloadable Stripe URLs.
+
+### Webhook request flow
+
+The current implementation handles a Stripe webhook as follows:
+
+1. `services/src/main.ts` creates the Nest application with `rawBody: true`, so the original request bytes remain available for Stripe signature verification. It also registers JSON and URL-encoded body parsers with a 3 MB limit.
+2. `BillingController` exposes `POST /api/v1/billing/webhook`, reads the `stripe-signature` header, and passes both the signature and `req.rawBody` to `BillingService`.
+3. `BillingService` reads `STRIPE_WEBHOOK_SECRET` and calls Stripe's `constructEvent`. Missing or invalid signatures are rejected before event processing.
+4. The service dispatches supported event types:
+
+- `checkout.session.completed` activates the selected paid plan.
+- `customer.subscription.created` and `customer.subscription.updated` synchronize the paid plan.
+- `invoice.created`, `invoice.finalized`, `invoice.payment_failed`, and `invoice.voided` save invoice state.
+- `invoice.paid` and `invoice.payment_succeeded` save invoice state and synchronize the paid plan from invoice metadata or its price ID.
+
+5. `saveInvoice()` extracts Stripe customer/subscription IDs, resolves the application user, converts Unix timestamps to dates, and upserts the record in `payment_invoices` using `stripe_invoice_id` as the conflict key.
+6. The webhook responds with `{ "recieved": true }` after the selected handler completes. (The response key is currently spelled `recieved` in the implementation.)
+
+Invoice ownership is intentionally scoped to the authenticated application user. If an invoice has no matching `userId` metadata and no matching `plan` row for its subscription or customer, `saveInvoice()` skips it and the webhook still returns successfully. Check the Stripe event payload, the `plan` table, and the service's `DATABASE_URL` when an invoice appears in Stripe but not in the dashboard database. The API does not import historical invoices directly from Stripe; resend the event after the webhook and ownership configuration is correct.
+
+The webhook endpoint is not protected by the Clerk `AuthGuard`; Stripe authenticates it with the `stripe-signature` header and `STRIPE_WEBHOOK_SECRET`. Do not call it with a normal browser request or alter the request body before signature verification.
+
+### Local Stripe webhook testing
+
+1. Start the backend and ensure `services/.env` contains the Stripe variables above.
+2. Start the Stripe CLI listener from the `services` directory:
+
+```powershell
+stripe listen --forward-to localhost:8080/api/v1/billing/webhook
+```
+
+3. Copy the `whsec_...` value printed by the CLI into `STRIPE_WEBHOOK_SECRET` and restart the backend.
+4. Complete a test Checkout payment or resend an existing invoice event from the Stripe Dashboard.
+5. Refresh the dashboard Settings page. The invoice appears after the webhook has been accepted and persisted.
+
+If an invoice was created before invoice persistence was enabled, resend its Stripe webhook event from **Stripe Dashboard → Developers → Webhooks**. Existing Stripe invoices are not imported automatically by the `/billing/invoices` endpoint.
 
 ## Testing
 
