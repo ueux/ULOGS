@@ -8,6 +8,8 @@ import {
   Check,
   Download,
   AlertTriangle,
+  CreditCard,
+  X,
 } from "lucide-react";
 import {
   Select,
@@ -33,69 +35,185 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useUser } from "@clerk/nextjs";
+import { getToken, useUser } from "@clerk/nextjs";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+
+type CurrentPlanResponse = {
+  plan?: string | null;
+}
+type BillingSessionResponse = {
+  url: string;
+}
+type BillingPortalSessionResponse = {
+  url: string;
+}
+
+type PaymentInvoice = {
+  id: string;
+  stripe_invoice_id: string;
+  status: string | null;
+  currency: string | null;
+  amount_due: number | null;
+  amount_paid: number | null;
+  hosted_invoice_url: string | null;
+  invoice_pdf: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  created_at: string | null;
+
+};
+
+type PaymentInvoicesResponse = {
+  invoices: PaymentInvoice[];
+};
 
 export default function Page() {
-  const { user, isLoaded } = useUser();
-  const currentPlan = "free" as "free" | "starter" | "pro" | "enterprise";
-  const [selectedPlan, setSelectedPlan] = React.useState<
-    "free" | "starter" | "pro" | "enterprise"
-  >(currentPlan);
+  const { user, isLoaded, isSignedIn } = useUser();
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+
+  const { data: planData, isLoading } = useQuery<CurrentPlanResponse>({
+    queryKey: ["user-plan"],
+    queryFn: async () => {
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SERVER_URI}/billing/current`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load current plan");
+      }
+      return response.json() as Promise<CurrentPlanResponse>;
+    },
+    enabled: isLoaded && Boolean(isSignedIn)
+  })
+
+  const { data: invoicesData, isLoading: isLoadingInvoices } = useQuery<PaymentInvoicesResponse>({
+    queryKey: ["payment-invoices"],
+    queryFn: async () => {
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SERVER_URI}/billing/invoices`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+
+        },
+      },
+
+      )
+      if (!response.ok) {
+        throw new Error("Failed to load invoices");
+      }
+      return response.json() as Promise<PaymentInvoicesResponse>;
+    },
+    enabled: isLoaded && Boolean(isSignedIn)
+  })
+  const createPortalSession = useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SERVER_URI}/billing/portal`,
+
+        {
+
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          }
+        })
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.message || "Failed to open billing portal");
+      }
+      return response.json() as Promise<BillingPortalSessionResponse>
+    },
+    onSuccess: ({ url }) => {
+      window.location.href = url;
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to open billing portal"
+      )
+    }
+  })
 
   // Plan details matching the pricing page
   const planDetails = {
     free: {
       name: "Free",
       price: "$0",
+      description: "For personal projects and prototypes.",
+      cta: "Start Free",
       features: [
-        "10k logs/month",
-        "7-day retention",
-        "Advanced search",
-        "Email support",
-        "API ACCESS",
+        { label: "10k events/month", included: true },
+        { label: "7-day retention", included: true },
+        { label: "Search your production events", included: true },
+        { label: "Full SDK access", included: true },
+        { label: "Community support", included: true },
+        { label: "Active alerts", included: false },
+        { label: "Webhook notifications", included: false },
+        { label: "Email support", included: false },
+
       ],
-      logsLimit: "10k logs/month",
+      logsLimit: "10k events/month",
     },
     starter: {
       name: "Starter",
       price: "$9.99",
+      description: "For indie hackers and MVP SaaS products.",
+      popular: true,
+      cta: "Get Started",
       features: [
-        "100k logs/month",
-        "30-day retention",
-        "Advanced search",
-        "Priority support",
-        "API ACCESS",
+        { label: "100k events/month", included: true },
+        { label: "30-day retention", included: true },
+        { label: "5 active alerts", included: true },
+        { label: "Webhook notifications", included: true },
+        { label: "Email support", included: true },
+        { label: "Full SDK access", included: true },
       ],
-      logsLimit: "100k logs/month",
+      logsLimit: "100k events/month",
     },
     pro: {
       name: "Pro",
       price: "$19.99",
+      description: "For growing products with real customers.",
+      cta: "Choose Pro",
       features: [
-        "1M logs/month",
-        "90-day retention",
-        "Real-time alerts",
-        "24/7 support",
-        "API ACCESS",
+        { label: "500k events/month", included: true },
+        { label: "60-day retention", included: true },
+        { label: "12 active alerts", included: true },
+        { label: "Webhook notifications", included: true },
+        { label: "Email support", included: true },
+        { label: "Full SDK access", included: true },
       ],
-      logsLimit: "1M logs/month",
+      logsLimit: "500k events/month",
     },
-    enterprise: {
-      name: "Enterprise",
-      price: "Custom",
+    business: {
+      name: "Business",
+      price: "29.99",
+      description: "For production systems that can't afford downtime.",
+      cta: "Choose Business",
       features: [
-        "Unlimited logs",
-        "Custom retention",
-        "Dedicated support",
-        "SLA guarantee",
-        "Advanced security",
-        "On-premise option",
+        { label: "1M events/month", included: true },
+        { label: "90-day retention", included: true },
+        { label: "20 active alerts", included: true },
+        { label: "Webhook notifications", included: true },
+        { label: "Email support", included: true },
+        { label: "Full SDK access", included: true },
       ],
-      logsLimit: "Unlimited logs",
+      logsLimit: "1M events/month",
     },
   };
+  type Plankey = keyof typeof planDetails;
 
+  const isPlankey = (plan: unknown): plan is Plankey =>
+    typeof plan === "string" && plan in planDetails;
+
+  const currentPlan: Plankey = isPlankey(planData?.plan) ? planData.plan : "free";
   const currentPlanDetails = planDetails[currentPlan];
 
   // Design tokens for a premium look
@@ -107,10 +225,55 @@ export default function Page() {
       "linear-gradient(180deg, rgba(16,20,27,0.92) 0%, rgba(16,20,27,0.78) 100%)",
     shadow: "0 10px 30px rgba(0,0,0,0.45)",
   };
-
+  const createBillingSession = useMutation({
+    mutationFn: async (plan: Exclude<Plankey, "free">) => {
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SERVER_URI}/billing`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ plan })
+        })
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(
+          error?.message || "Failed to create the billing session!",
+        )
+      }
+      return response.json() as Promise<BillingSessionResponse>;
+    },
+    onSuccess: ({ url }) => {
+      window.location.href = url
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Failed to create billing session")
+    }
+  })
   // Invoices mock data - dynamic based on plan
-  const invoices: any[] = [];
-
+  const invoices: any[] = invoicesData?.invoices ?? [];
+  function formatInvoiceDate(invoice: PaymentInvoice) {
+    const date = invoice.created_at || invoice.period_start;
+    if (!date) {
+      return "N/A";
+    }
+    return new Date(date).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+  function formatInvoiceAmount(invoice: PaymentInvoice) {
+    const amount = invoice.amount_paid ?? invoice.amount_due ?? 0;
+    const currency = invoice.currency || "usd";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency.toUpperCase(),
+    }).format(amount / 100);
+  }
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -164,115 +327,112 @@ export default function Page() {
             }}
           >
             <div className="space-y-4">
-              <h3 className="text-sm font-medium">Billing & Plan</h3>
-              <p className="text-sm text-muted-foreground">
-                Manage your subscription and usage securely. All payments are
-                handled via Stripe.
-              </p>
-
-              {/* Premium two-card layout */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div
-                  className="rounded-md border p-5 transition-all hover:border-white/20"
-                  style={{
-                    background: TOKENS.cardBg,
-                    border: `1px solid ${TOKENS.border}`,
-                  }}
-                >
-                  <div className="text-xs text-muted-foreground mb-2">
-                    Current Plan
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-base font-semibold capitalize">
-                      {!isLoaded ? "Loading..." : currentPlanDetails.name}
-                    </span>
-                    <span
-                      className="text-[11px] px-2 py-0.5 rounded-full border"
-                      style={{
-                        background: "rgba(0,194,168,0.12)",
-                        borderColor: "rgba(0,194,168,0.35)",
-                        color: TOKENS.accent,
-                      }}
-                    >
-                      Active
-                    </span>
-                  </div>
-
-                  <div className="mt-3 space-y-2 text-sm">
-                    {currentPlanDetails.features
-                      .slice(0, 3)
-                      .map((feature, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center gap-2 text-white/85"
-                        >
-                          <Check className="h-4 w-4" color={TOKENS.accent} />
-                          {feature}
+              <div className="flex flex-col gap-4 sm:flex-row sm: items-start sm: justify-between">
+                <div>
+                  <h3 className="text-sm font-medium">Billing & Plan</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Manage your subscription and usage securely. All payments are
+                    handled via Stripe.
+                  </p>
+                </div>
+                {currentPlan !== 'free' ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => createPortalSession.mutate()}
+                    className="h-9.5 rounded-md cursor-pointer border-white/10 bg-white/4 px-4 text-sm text-white/80 hover:bg-white/8">
+                    <div className="flex items-center gap-2">
+                      <CreditCard />
+                      {createPortalSession.isPending ? ("Opening Stripe...") : (
+                        <div className="flex items-center gap-2">
+                          Manage Billing
                         </div>
-                      ))}
-                  </div>
-                </div>
+                      )}
 
-                {/* Change Plan selector */}
-                <div
-                  className="rounded-md border p-5 transition-all hover:border-white/20"
-                  style={{
-                    background: TOKENS.cardBg,
-                    border: `1px solid ${TOKENS.border}`,
-                  }}
-                >
-                  <div className="text-xs text-muted-foreground mb-2">
-                    Change Plan
-                  </div>
-                  <Select
-                    value={selectedPlan}
-                    onValueChange={(v) =>
-                      setSelectedPlan(v as typeof selectedPlan)
-                    }
-                  >
-                    <SelectTrigger className="w-full rounded-md">
-                      <SelectValue placeholder="Select a plan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="free">Free</SelectItem>
-                      <SelectItem value="starter">Starter</SelectItem>
-                      <SelectItem value="pro">Pro</SelectItem>
-                      <SelectItem value="enterprise">Enterprise</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <div className="text-xs text-muted-foreground">Usage</div>
-                      <div className="font-medium">
-                        {currentPlanDetails.logsLimit}
-                      </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">
-                        Next Invoice
-                      </div>
-                      <div className="font-medium">
-                        {currentPlan === "free" ? "N/A" : "Nov 30, 2025"}
-                      </div>
-                    </div>
-                  </div>
+                  </Button>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+                {
+                  (Object.entries(planDetails) as Array<[
+                    keyof typeof planDetails,
+                    (typeof planDetails)[keyof typeof planDetails]
+                  ]>).map(([planKey, plan]) => {
+                    const isCurrentPlan = planKey === currentPlan;
+                    const isPopular = planData?.plan === "free"
+                      ? Boolean("popular" in plan && plan.popular) : false;
+                    const isFreePlan = planKey === "free"
+                    const isCreatingThisSession = createBillingSession?.isPending && createBillingSession.variables == planKey
 
-                  <div className="flex justify-end gap-2 pt-3">
-                    <Button
-                      className="rounded-md"
-                      disabled={
-                        selectedPlan === currentPlan ||
-                        currentPlan === "enterprise"
-                      }
-                    >
-                      <ArrowUpCircle className="mr-2 h-4 w-4" />
-                      {selectedPlan === currentPlan
-                        ? "Current Plan"
-                        : "Upgrade Plan"}
-                    </Button>
-                  </div>
-                </div>
+                    return (<div key={planKey} className={`flex min-h-107.5 flex-col rounded-xl border p-5 transition-colors hover : border-white/14 ${isPopular ? "border-cyan-400/35400/35" : ""}`}
+                      style={{
+                        borderColor: isPopular ? "#222" : TOKENS.border,
+                      }}>
+                      <div>
+                        <div className="flex min-h-6 items-center justify-between gap-3">
+                          <div
+                            className={`text-xs font-semibold uppercase tracking-[O.14em] ${isPopular ? "text-cyan-300" : "text-white/50"
+                              }`}
+                          >
+                            {plan.name}
+                          </div>
+                          {isPopular ? (<span className="rounded-full border border-cyan-400/35">Popular</span>) : null}
+                        </div>
+                        <div className="mt-2 flex items-end gap-1">
+                          <span className="text-3xl font-semibold tracking-tight text-white">
+                            {plan.price}
+                          </ span>
+                          <span className="pb-1 text-sm text-white/45">
+                            /mo
+                          </ span>
+                        </div>
+                        <p className="mt-4 min-h-12 text-sm leading-6 text-white/55">
+                          {plan.description}
+                        </p>
+                      </div>
+
+                      <div className="mt-6 flex-1 space-y-2.5 text-sm">
+                        {plan.features.map((feature) => (
+                          <div
+                            key={feature.label}
+                            className={`flex items-center gap-3 ${feature.included
+                              ? "text-white/90"
+                              : "text-white/60"
+                              }`}
+                          >
+                            <span
+                              className={`flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full ${feature.included
+                                ? isPopular
+                                  ? "bg-cyan-400/10 text-cyan-300"
+                                  : "bg-white/8 text-white/80"
+                                : "bg-white/8 text-red-300/80"}`}>
+                              {feature.included ? (
+                                <Check className="h-3 w-3" />
+                              ) : (
+                                <X className="h-3 w-3" />
+                              )}
+                            </span>
+                            {feature.label}
+                          </div>
+                        ))}
+                      </div>
+                      <Button
+                        className={`mt-6 h-10 w-full cursor-pointer rounded-full ${isPopular
+                          ? "border border-cyan-400/25 bg-cyan-400/8"
+                          : "border border-white/8 bg-white/4 text-white/80"
+                          }`}
+                        disabled={
+                          isCurrentPlan
+                          || isFreePlan || isLoading || createBillingSession.isPending}
+                        onClick={() => {
+                          if (isFreePlan) return;
+                          createBillingSession.mutate(planKey);
+                        }}
+
+                      >{isCreatingThisSession ? "Generating payment Link..." : isCurrentPlan ? isLoaded ? "Current Plan" : "Loading" : plan.cta}</Button>
+                    </div>)
+                  })}
+
               </div>
 
               {/* Invoices table (polished) */}
@@ -321,7 +481,7 @@ export default function Page() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {invoices?.length > 0 ? (
+                      {isLoadingInvoices ? (<TableRow><TableCell colSpan={5} className=" h-24 text-center">Loading invoices ...</TableCell></TableRow>) : (<>{invoices?.length > 0 ? (
                         <>
                           {invoices.map((inv) => (
                             <TableRow
@@ -329,13 +489,13 @@ export default function Page() {
                               className="group transition-all hover:bg-white/3"
                             >
                               <TableCell className="font-mono text-xs text-white/90">
-                                {inv.id}
+                                {inv.stripe_invoice_id.slice(0, 8)}...
                               </TableCell>
                               <TableCell className="text-white/80">
-                                {inv.date}
+                                {formatInvoiceDate(inv)}
                               </TableCell>
                               <TableCell className="text-white/80">
-                                {inv.amount}
+                                {formatInvoiceAmount(inv)}
                               </TableCell>
                               <TableCell>
                                 <span
@@ -352,6 +512,19 @@ export default function Page() {
                               <TableCell>
                                 <Button
                                   variant="outline"
+                                  onClick={() => {
+                                    const url =
+                                      inv?.invoice_pdf ||
+                                      inv.hosted_invoice_url;
+
+                                    if (url) {
+                                      window.open(
+                                        url,
+                                        "_blank",
+                                        "noopener, noreferrer",)
+                                    }
+                                  }}
+                                  disabled={!inv.invoice_pdf && !inv.hosted_invoice_url}
                                   size="sm"
                                   className="rounded-lg opacity-80 group-hover:opacity-100 hover:bg-[rgba(0,194,168,0.15)]"
                                 >
@@ -368,7 +541,7 @@ export default function Page() {
                             No invoices available yet!
                           </TableCell>
                         </TableRow>
-                      )}
+                      )}</>)}
                     </TableBody>
                   </Table>
                 </div>
@@ -513,10 +686,10 @@ export default function Page() {
                   <div className="text-sm font-semibold text-white">
                     {user?.createdAt
                       ? new Date(user.createdAt).toLocaleDateString("en-US", {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })
                       : "Not available"}
                   </div>
                 </div>

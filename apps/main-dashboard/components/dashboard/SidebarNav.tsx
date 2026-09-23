@@ -29,13 +29,36 @@ import {
   User2,
 } from "lucide-react";
 import Logo from "../common/logo";
-import { UserButton, useUser } from "@clerk/nextjs";
+import { getToken, UserButton, useUser } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
+import { useQuery } from "@tanstack/react-query";
+
+type CurrentPlanResponse = {
+  plan?: string | null;
+}
 
 export function DashboardSidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, isLoaded } = useUser();
-
+  const { user, isLoaded, isSignedIn } = useUser();
+  const { data: planData, isLoading } = useQuery<CurrentPlanResponse>({
+    queryKey: ["user-plan"],
+    queryFn: async () => {
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SERVER_URI}/billing/current`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load current plan");
+      }
+      return response.json() as Promise<CurrentPlanResponse>;
+    },
+    enabled: isLoaded && Boolean(isSignedIn)
+  })
   const items = [
     { label: "Overview", href: "/", Icon: Home },
     { label: "Live Logs", href: "/live-logs", Icon: Activity },
@@ -135,22 +158,22 @@ export function DashboardSidebar({ children }: { children: React.ReactNode }) {
           <div className="relative mt-3 mx-3 mb-3 group-data-[collapsible=icon]:hidden">
             {/* User Plan Badge - positioned to overlap top-left of card */}
             {(() => {
-              const plan = "free";
               const badgeStyles = {
                 free: "bg-gradient-to-r from-gray-500/20 to-gray-600/20 text-gray-400 border-gray-500/30",
                 starter:
                   "bg-gradient-to-r from-teal-500/20 to-emerald-500/20 text-[#00C2A8] border-[#00C2A8]/30",
                 pro: "bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-400 border-purple-400/30",
+                business:"bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple"
               };
               const style =
-                badgeStyles[plan as keyof typeof badgeStyles] ||
+                badgeStyles[planData?.plan as keyof typeof badgeStyles] ||
                 badgeStyles.free;
 
               return (
                 <span
                   className={`absolute -top-3 left-2 z-10 text-[11px] font-semibold capitalize px-2 py-0.5 rounded-lg ${style}`}
                 >
-                  free
+                  {isLoading?"...":planData?.plan}
                 </span>
               );
             })()}

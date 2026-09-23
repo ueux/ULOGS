@@ -3,13 +3,18 @@ import { AppModule } from './app.module';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { createLogsTable } from './clickhouse/schema';
 import { startLogsConsumer } from './nats/consumer';
+import { NestExpressApplication } from '@nestjs/platform-express'
+import { initNatsStream } from './nats/initStream';
+import { startWorkers } from './infra/start.worker';
+import { BodyParserExceptionFilter } from './filters/body-parser-exception.filter'
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bodyParser: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: true, rawBody: true });
+  app.useBodyParser('json', { limit: '3mb' })
+  app.useBodyParser('urlencoded', { limit: '3mb' ,extended:true})
   await createLogsTable()
-  void startLogsConsumer().catch((error)=>{
-    console.error('ULOGS Logs Consumer failed to start',error);
-  })
+  await initNatsStream()
+  await startWorkers()
 
   app.setGlobalPrefix("api")
   app.enableVersioning({
@@ -28,6 +33,7 @@ async function bootstrap() {
       transform:true
     })
   )
+  app.useGlobalFilters(new BodyParserExceptionFilter(app.getHttpAdapter()))
   await app.listen(process.env.PORT ?? 3000);
 }
 void bootstrap();
