@@ -9,6 +9,7 @@ import DashboardSidebar from "@/components/dashboard/SidebarNav";
 import { SidebarInset } from "@/components/ui/sidebar";
 import TopBar from "@/components/dashboard/TopBar";
 import QueryProvider from "@/providers/query-provider";
+import { Toaster } from "sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -53,6 +54,7 @@ export default function RootLayout({
                   </div>
                 </SidebarInset>
               </DashboardSidebar>
+              <Toaster/>
             </QueryProvider>
           </TooltipProvider>
         </body>

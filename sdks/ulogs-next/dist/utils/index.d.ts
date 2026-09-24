@@ -1,4 +1,12 @@
 import { LoggerConfig, LogPayload } from "../types/index.js";
+export interface LogRequestOptions {
+    authToken?: string;
+}
+export interface VerifyWebhookOptions {
+    signature: string;
+    timestamp: string;
+    body: unknown;
+}
 export declare class ULOGSTransport {
     private config;
     private baseUrl;
@@ -15,8 +23,10 @@ export declare class ULOGSTransport {
     send(payload: LogPayload): Promise<void>;
     private setupGracefulShutdown;
     private flush;
-    get(filters?: Record<string, any>): Promise<any>;
-    stream(filters?: Record<string, any>): {
+    private buildReadHeaders;
+    get(filters?: Record<string, any>, options?: LogRequestOptions): Promise<any>;
+    verifyWebhook({ signature, timestamp, body }: VerifyWebhookOptions): Promise<any>;
+    stream(filters?: Record<string, any>, options?: LogRequestOptions): {
         body: ReadableStream<Uint8Array>;
     };
 }

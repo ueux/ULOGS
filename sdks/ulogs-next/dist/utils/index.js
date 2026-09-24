@@ -87,7 +87,16 @@ export class ULOGSTransport {
         }
         this.isFlushing = false;
     }
-    async get(filters) {
+    buildReadHeaders(options) {
+        const headers = {
+            ...(options?.authToken
+                ? { Authorization: `Bearer ${options.authToken}` }
+                : { "x-api-key": this.apiKey }),
+            ...(this.appName ? { "x-ulogs-app-name": this.appName } : {}),
+            ...(this.environment ? { "x-ulogs-env": this.environment } : {}),
+        };
+    }
+    async get(filters, options) {
         const headers = {
             "x-api-key": this.apiKey,
             ...(this.appName ? { "x-ulogs-app-name": this.appName } : {}),
@@ -103,7 +112,26 @@ export class ULOGSTransport {
         }
         return res.json();
     }
-    stream(filters) {
+    async verifyWebhook({ signature, timestamp, body }) {
+        const response = await fetch(`${this.baseUrl}/alerts/verify-webhook`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": this.apiKey,
+            },
+            body: JSON.stringify({
+                signature,
+                timestamp,
+                body,
+            }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.message ?? "Failed to verify webhook.");
+        }
+        return result;
+    }
+    stream(filters, options) {
         const qs = new URLSearchParams(filters).toString();
         const url = `${this.baseUrl}/logs/stream?${qs}`;
         const headers = {

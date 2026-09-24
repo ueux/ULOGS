@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -27,6 +27,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { getToken, useUser } from "@clerk/nextjs";
+import { format } from "timeago.js";
+
+type BackendAlert = {
+  id: string;
+  name: string;
+  appName: string;
+  summary: string;
+  threshold_count: number;
+  threshold_window_minutes: number;
+  last_triggered: string | null;
+  created_at: string | null;
+}
 
 export default function Page() {
   // Derived/extra data for new sections (kept client-side for now)
@@ -37,7 +50,54 @@ export default function Page() {
     { name: "Public API", status: "healthy" },
   ];
 
+
+
   const [logsData, setLogsData] = React.useState<any>(null);
+  const [alertsData, setAlertsData] = React.useState<BackendAlert[]>([]);
+  const [isLoadingAlerts, setIsLoadingAlerts] = React.useState(true);
+  const { isLoaded, isSignedIn } = useUser()
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const res = await fetch("/api/logs/get-logs?limit=1000&range=12h");
+        const data = await res.json();
+        setLogsData(data);
+      } catch (error) {
+        console.error("Failed to fetch logs", error);
+      }
+    }
+    fetchLogs();
+  }, []);
+
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        setIsLoadingAlerts(true);
+        const token = await getToken();
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_SERVER_URI}/alerts`,
+          {
+
+            headers: {
+              Authorization: `Bearer ${token}`,
+            }
+          })
+        if (!response.ok) {
+          throw new Error("Failed to fetch the alerts")
+        }
+        const data = (await response.json()) as BackendAlert[]
+        setAlertsData(Array.isArray(data) ? data : [])
+      } catch (error) {
+        console.error("Failed to fetch alerts", error)
+        setAlertsData([])
+      }
+      finally {
+        setIsLoadingAlerts(false)
+      }
+    }
+    fetchAlerts()
+
+  }, [isLoaded, isSignedIn])
 
   // Calculate dynamic metrics
   const { errorRate, lineData, errorTrendData, topActivity, topSources } =
@@ -148,12 +208,54 @@ export default function Page() {
       };
     }, [logsData]);
 
+  const recentAlerts = useMemo(() => {
+    return [...alertsData]
+      .sort((a, b) => {
+        const aDate = new Date(a.last_triggered ?? a.created_at ?? 0).getTime();
+        const bDate = new Date(b.last_triggered ?? b.created_at ?? 0).getTime();
+
+        return bDate - aDate;
+      })
+      .slice(0, 4);
+  }, [alertsData]);
+
   // Live metrics state (ingestRate and backlog from SSE)
   const [metrics, setMetrics] = React.useState<{
     ingestRate: number;
     backlog: number;
     avgLatency: number;
   } | null>(null);
+
+  useEffect(() => {
+    const es = new EventSource("/api/live-metrics");
+
+    es.onmessage = (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        const ingestRate = Number.isFinite(Number(payload?.ingestRate))
+          ? Number(payload.ingestRate)
+          : 0;
+        const backlog = Number.isFinite(Number(payload?.backlog))
+          ? Number(payload.backlog)
+          : 0;
+        const avgLatency = Number.isFinite(Number(payload?.avgLatency))
+          ? Number(payload.avgLatency)
+          : 0;
+
+        setMetrics({ ingestRate, backlog, avgLatency });
+      } catch (error) {
+        console.error("Failed to parse live metrics payload", error);
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+    };
+
+    return () => {
+      es.close();
+    };
+  }, []);
 
   // Format ingest rate as e.g. "2.3k/s" or "980/s"
   const fmtRate = (n: number) =>
@@ -181,7 +283,7 @@ export default function Page() {
             value: metrics ? fmtRate(metrics.ingestRate) : "—",
             live: true,
           },
-          { label: "Active Alerts", value: "0" },
+          { label: "Active Alerts", value: isLoadingAlerts ? "-" : alertsData?.length },
           {
             label: "Avg Latency",
             value: metrics ? `${metrics.avgLatency}ms` : "—",
@@ -227,8 +329,8 @@ export default function Page() {
           <CardHeader>
             <CardTitle className="text-sm">Logs Over Time (12h)</CardTitle>
           </CardHeader>
-          <CardContent className="h-70">
-            <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="h-70 min-h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%" minHeight={240}>
               <LineChart
                 data={lineData}
                 margin={{ left: 8, right: 8, top: 8, bottom: 8 }}
@@ -255,8 +357,8 @@ export default function Page() {
           <CardHeader>
             <CardTitle className="text-sm">Error Trend (12h)</CardTitle>
           </CardHeader>
-          <CardContent className="h-70">
-            <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="h-70 min-h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%" minHeight={240}>
               <AreaChart
                 data={errorTrendData}
                 margin={{ left: 8, right: 8, top: 8, bottom: 8 }}
@@ -284,9 +386,9 @@ export default function Page() {
           <CardHeader>
             <CardTitle className="text-sm">Top Sources (24h)</CardTitle>
           </CardHeader>
-          <CardContent className="h-70">
+          <CardContent className="h-70 min-h-[280px] w-full">
             {topSources.length > 0 ? (
-              <div className="h-full flex items-center justify-center">
+              <div className="h-full min-w-0 flex items-center justify-center">
                 <div
                   style={{
                     width:
@@ -295,9 +397,10 @@ export default function Page() {
                         : "100%",
                     maxWidth: "100%",
                     height: "100%",
+                    minWidth: 0,
                   }}
                 >
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={240}>
                     <BarChart
                       data={topSources}
                       margin={{ left: 8, right: 8, top: 8, bottom: 8 }}
@@ -430,11 +533,44 @@ export default function Page() {
             <CardHeader>
               <CardTitle className="text-sm">Recent Alerts</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                Enough data not available yet!
-              </div>
-            </CardContent>
+            {isLoadingAlerts ? (
+              <div className="flex h-full items-center justify-center">
+                Loading alerts ...
+              </div>)
+              :
+              recentAlerts.length > 0 ? (
+                <div className="space-y-3">
+                  {recentAlerts.map((alert) => {
+                    const activityDate = alert.last_triggered ?? alert.created_at;
+                    const parsedDate = activityDate ? new Date(activityDate) : null;
+                    const relativeTime = parsedDate && !Number.isNaN(parsedDate.getTime())
+                      ? format(parsedDate)
+                      : "Never triggered";
+
+                    return (
+                      <div key={alert.id}>
+                        <div className="text-sm">{alert.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {alert.appName} ACTIVE {alert.summary}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+                          <span>
+                            {alert.threshold_count} logs / {alert.threshold_window_minutes}m
+                          </span>
+                          <span>{relativeTime}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  Enough data not availableryet!
+                </div>
+              )
+
+            }
+
           </Card>
         </div>
       </div>

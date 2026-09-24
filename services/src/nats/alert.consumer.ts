@@ -15,6 +15,7 @@ type AlertCondition = {
 type WebhookResult = {
   eventId: string;
   status: number;
+  delivered: boolean;
 };
 
 type AlertRule = {
@@ -75,6 +76,14 @@ function matchCondition(log: any, condition: AlertCondition) {
       return Number(actual) !== expectedImportance;
     }
     return false;
+  }
+  switch (condition.operator) {
+    case 'equals':
+      return normalize(actual) === normalize(expected);
+    case 'not_equals':
+      return normalize(actual) !== normalize(expected);
+    default:
+      return false;
   }
 }
 function parseCooldownSeconds(input: string) {
@@ -152,13 +161,17 @@ async function callWebhook(
     if (!response.ok) {
       const responseBody = await response.text().catch(() => '');
 
-      throw new Error(
-        `Webhook returned HTTP ${response.status}${
-          responseBody ? `: ${responseBody.slice(0, 500)}` : ''
-        }`,
-      );
+      console.warn('Webhook delivery failed', {
+        alertId: rule.id,
+        alertName: rule.name,
+        webhookUrl: rule.webhook_url,
+        status: response.status,
+        response: responseBody.slice(0, 500),
+      });
+
+      return { eventId, status: response.status, delivered: false };
     }
-    return { eventId, status: response.status };
+    return { eventId, status: response.status, delivered: true };
   } finally {
     clearTimeout(timeout);
   }
@@ -168,7 +181,7 @@ export async function startAlertConsumer() {
   const { nc, jc } = await getNats();
   const js = nc.jetstream();
   const durable = 'ulogs-alert-worker';
-  const subject = 'logs.alert. evaluate';
+  const subject = 'logs.alert.evaluate';
   const opts = consumerOpts();
 
   opts.durable(durable);
@@ -220,7 +233,9 @@ export async function startAlertConsumer() {
           if (cooldownExists) continue;
 
           const triggeredAt = new Date().toISOString();
-          await callWebhook(rule, matchedLogs);
+          const webhookResult = await callWebhook(rule, matchedLogs);
+          if (!webhookResult.delivered) continue;
+
           await redis.set(
             cooldownKey,
             '1',
@@ -240,7 +255,8 @@ export async function startAlertConsumer() {
       }
       msg.ack();
     } catch (error) {
-      console.error('Alert cunsumer error', error);
+      console.error('Alert consumer error', error);
+      msg.ack();
     }
   }
 }

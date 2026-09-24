@@ -30,7 +30,8 @@ export function createLogger(config) {
         metric: createTypeMethod("metric"),
         audit: createTypeMethod("audit"),
         warning: createTypeMethod("warning"),
-        get: (filters) => transport.get(filters),
-        stream: (filters) => transport.stream(filters),
+        get: (filters, options) => transport.get(filters, options),
+        verifyWebhook: (options) => transport.verifyWebhook(options),
+        stream: (filters, options) => transport.stream(filters, options),
     };
 }
