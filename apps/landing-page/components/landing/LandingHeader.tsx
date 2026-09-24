@@ -24,6 +24,8 @@ import { useClerk, useUser } from "@clerk/nextjs";
 export function LandingHeader() {
   const { user, isLoaded, isSignedIn } = useUser();
   const { signOut } = useClerk();
+  const dashboardUrl =
+    process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3001";
 
   if (!isLoaded) {
     return null;
@@ -97,21 +99,21 @@ export function LandingHeader() {
                   className="w-56 bg-slate-900 border-slate-800"
                   align="end"
                 >
-                  <Link href={"http://localhost:3001"} target="__blank">
+                  <Link href={dashboardUrl} target="_blank">
                     <DropdownMenuItem className="text-slate-200 hover:bg-slate-800! hover:text-white">
                       <LayoutDashboard className="mr-2 h-4 w-4" />
                       Dashboard
                     </DropdownMenuItem>
                   </Link>
-                  <Link href={"http://localhost:3001/settings"}>
+                  <Link href={`${dashboardUrl}/settings`} target="_blank">
                     <DropdownMenuItem className="text-slate-200 hover:bg-slate-800! hover:text-white">
                       <CreditCard className="mr-2 h-4 w-4" />
                       Billing
                     </DropdownMenuItem>
                   </Link>
                   <Link
-                    href={"http://localhost:3001/settings"}
-                    target="__blank"
+                    href={`${dashboardUrl}/settings`}
+                    target="_blank"
                   >
                     <DropdownMenuItem className="text-slate-200 hover:bg-slate-800! hover:text-white">
                       <Settings className="mr-2 h-4 w-4" />

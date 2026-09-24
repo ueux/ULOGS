@@ -1,5 +1,15 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+let fallbackIdCounter = 0;
+function uniqueLogId() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+    // crypto.randomUUID only exists in secure contexts
+    return `ulogs-${Date.now()}-${(fallbackIdCounter++).toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
+}
 function toLogEntry(l) {
     const rawType = (l.type || "info").toLowerCase();
     const level = rawType === "warning"
@@ -23,7 +33,7 @@ function toLogEntry(l) {
         tsIso = new Date(String(l.timestamp).replace(" ", "T") + "Z").toISOString();
     }
     return {
-        id: crypto.randomUUID(),
+        id: uniqueLogId(),
         ts: tsIso,
         level,
         source: l.appName || "default",

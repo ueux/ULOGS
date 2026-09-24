@@ -31,7 +31,10 @@ export function broadcastLogs(newLogs: any[]) {
       if (filters.type && log.type !== filters.type) return false;
       if (filters.env && log.environment !== filters.env) return false;
       if (filters.appName && log.appName !== filters.appName) return false;
-      if (filters.search && !log.message?.includes(filters.search))
+      if (
+        filters.search &&
+        !log.message?.toLowerCase().includes(filters.search.toLowerCase())
+      )
         return false;
       return true;
     });

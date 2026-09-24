@@ -50,7 +50,7 @@ const levelColor: Record<LogLevel, string> = {
 
 
 export default function LiveLogsPage() {
-  const { data: logs } = getStream()
+  const { data: logs, isLoading, error, connected } = getStream()
   const [autoScroll, setAutoScroll] = React.useState(true);
   const [filterLevel, setFilterLevel] = React.useState<"All" | LogLevel>("All");
   const [search, setSearch] = React.useState("");
@@ -144,9 +144,21 @@ export default function LiveLogsPage() {
             <span className="text-xs text-muted-foreground">
               Live tail • {logs.length} entries
             </span>
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${connected ? "bg-green-500" : "bg-yellow-500"}`}
+            />
+            <span className="text-xs text-muted-foreground">
+              {connected ? "Live" : "Reconnecting…"}
+            </span>
           </div>
           <span className="text-xs text-muted-foreground">Updates every second</span>
         </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+            Stream error: {String(error.message ?? error)}
+          </div>
+        )}
 
         <div
           ref={streamRef}
@@ -159,7 +171,12 @@ export default function LiveLogsPage() {
             lineHeight: "1.6",
           }}
         >
-          {filteredLogs.length === 0 ? (
+          {isLoading ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              <ActivityIcon className="mr-2 h-4 w-4 animate-pulse" />
+              Loading logs…
+            </div>
+          ) : filteredLogs.length === 0 ? (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <ActivityIcon className="mr-2 h-4 w-4" />
               No matching logs in the static tail.

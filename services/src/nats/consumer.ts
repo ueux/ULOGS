@@ -63,12 +63,30 @@ export async function startLogsConsumer() {
       console.warn(
         `JetStream durable '${durable}' is pull-based (missing deliver_subject). Recreating as push cusumer`,
       );
+      await jsm.consumers.delete(streamName, durable);
     }
-
-    await jsm.consumers.delete(streamName, durable);
   } catch (error) {}
 
   const sub = await js.subscribe(subject, opts);
+
+  let lastEventsTotal = Number((await redis.get('ingest:events')) || 0);
+  setInterval(async () => {
+    try {
+      const total = Number((await redis.get('ingest:events')) || 0);
+      await redis.set('ingest:last_rate', Math.max(0, total - lastEventsTotal));
+      lastEventsTotal = total;
+
+      const samples = await redis.lrange('ingest:latency', 0, 59);
+      if (samples.length > 0) {
+        const avg =
+          samples.reduce((sum, v) => sum + (Number(v) || 0), 0) /
+          samples.length;
+        await redis.set('ingest:avg_latency', Math.round(avg));
+      }
+    } catch (error) {
+      console.error('ULOGS metrics updater failed', error);
+    }
+  }, 1000);
 
   console.log('ULOGS Logs Consumer started');
   for await (const msg of sub) {
@@ -121,6 +139,7 @@ export async function startLogsConsumer() {
 
       const usageKey = usageRediskey(userId);
       await redis.hincrby(usageKey, 'events_used', transformed.length);
+      await redis.incrby('ingest:events', transformed.length);
       await redis.expire(usageKey, PLAN_REDIS_TTL_SEC);
       await redis.sadd(`ulogs:usage:dirty:${VERSION}`, userId);
       const lrukey = `usage:${userId}`;

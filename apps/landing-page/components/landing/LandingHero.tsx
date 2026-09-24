@@ -122,7 +122,7 @@ export function LandingHero() {
           </p>
 
           <div className="flex flex-wrap items-center gap-4 mb-10">
-            <Link href="/dashboard/overview">
+            <Link href={process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3001"}>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}

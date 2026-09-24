@@ -67,7 +67,7 @@ export class BillingService {
       });
       const u: any = await clerkClient.users.getUser(userId);
       const primaryId = u?.primaryEmailAddressId;
-      const primary = u?.emailAdddresses?.find((e: any) => e?.id === primaryId);
+      const primary = u?.emailAddresses?.find((e: any) => e?.id === primaryId);
       return (
         primary?.emailAddress ??
         u?.emailAddresses?.[0]?.emailAddress ??
@@ -241,16 +241,61 @@ export class BillingService {
         await this.activatePlanFromInvoice(invoice);
         break;
       }
+      case 'customer.subscription.deleted':
+        await this.handleSubscriptionDeleted(
+          event.data.object as Stripe.Subscription,
+        );
+        break;
       default:
         break;
     }
     return { recieved: true };
   }
 
+  private async handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+    const stripeCustomerId =
+      typeof subscription.customer === 'string'
+        ? subscription.customer
+        : subscription.customer?.id;
+
+    let userId = subscription.metadata?.userId;
+    if (!userId && stripeCustomerId) {
+      const [plan] = await this.db
+        .select({ user_id: schema.plan.user_id })
+        .from(schema.plan)
+        .where(eq(schema.plan.stripe_customer_id, stripeCustomerId))
+        .limit(1);
+      userId = plan?.user_id;
+    }
+    if (!userId && subscription.id) {
+      const [plan] = await this.db
+        .select({ user_id: schema.plan.user_id })
+        .from(schema.plan)
+        .where(eq(schema.plan.stripe_subscription_id, subscription.id))
+        .limit(1);
+      userId = plan?.user_id;
+    }
+    if (!userId) return;
+
+    const now = new Date();
+    await this.updatePlanSources({
+      userId,
+      plan: PlanTier.FREE,
+      stripeCustomerId,
+      stripeSubscriptionId: undefined,
+      stripePriceId: undefined,
+      updatedAt: now,
+    });
+    await this.updateUsageSources({
+      userId,
+      eventsLimit: PLAN_DEFAULTS[PlanTier.FREE].events_limit,
+      updatedAt: now,
+    });
+  }
+
   private async activatePlanFromSubscription(
     subscription: Stripe.Subscription,
-  ) {
-    const subscriptionData = subscription as any;
+  ) {    const subscriptionData = subscription as any;
     const userId = subscription.metadata?.userId;
     const stripePriceId = subscriptionData.items?.data?.[0]?.price?.id;
     const plan = this.resolvePaidPlan(
@@ -385,6 +430,11 @@ export class BillingService {
       stripePriceId,
       updatedAt: now,
     });
+    await this.updateUsageSources({
+      userId,
+      eventsLimit: planDefaults.events_limit,
+      updatedAt: now,
+    });
   }
   private async updatePlanSources({
     userId,
@@ -443,15 +493,11 @@ export class BillingService {
     const lruKey = `usage:${userId}`;
     const redisKey = usageRediskey(userId);
     const currentUsage = usageCache.get(lruKey);
-    const record = currentUsage
+    const redisUsage = currentUsage
       ? undefined
-      : await this.db.query.usage.findFirst({
-          where: (usage) => eq(usage.user_id, userId),
-          columns: {
-            events_used: true,
-          },
-        });
-    const eventsUsed = currentUsage?.events_used ?? record?.events_used ?? 0;
+      : await this.redis.hgetall(redisKey);
+    const eventsUsed =
+      currentUsage?.events_used ?? Number(redisUsage?.events_used ?? 0);
     usageCache.set(lruKey, {
       events_used: eventsUsed,
       events_limit: eventsLimit,

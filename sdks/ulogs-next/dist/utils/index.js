@@ -1,5 +1,6 @@
 import { getEnvConfig } from "../config/index.js";
 let shutdownHookRegistered = false;
+const activeTransports = new Set();
 export class ULOGSTransport {
     config;
     baseUrl;
@@ -39,27 +40,29 @@ export class ULOGSTransport {
         }
     }
     setupGracefulShutdown() {
+        activeTransports.add(this);
         if (shutdownHookRegistered)
             return;
         shutdownHookRegistered = true;
         process.setMaxListeners(Math.max(process.getMaxListeners(), 20));
-        const shutdownHandler = async (signal) => {
-            if (this.shuttingDown)
-                return;
-            this.shuttingDown = true;
-            try {
-                await this.flush();
-            }
-            catch (err) {
+        const flushAll = async () => {
+            await Promise.all([...activeTransports].map((transport) => transport.flush().catch((err) => {
                 console.error("[ULOGSTransport] Flush during shutdown failed:", err);
-            }
-            finally {
-                process.exit(0);
-            }
+            })));
         };
-        process.on("beforeExit", () => shutdownHandler("beforeExit"));
-        process.on("SIGINT", () => shutdownHandler("SIGINT"));
-        process.on("SIGTERM", () => shutdownHandler("SIGTERM"));
+        process.on("beforeExit", () => void flushAll());
+        let exiting = false;
+        const onSignal = () => {
+            if (exiting)
+                return;
+            exiting = true;
+            for (const transport of activeTransports) {
+                transport.shuttingDown = true;
+            }
+            void flushAll().finally(() => process.exit(0));
+        };
+        process.on("SIGINT", onSignal);
+        process.on("SIGTERM", onSignal);
     }
     async flush() {
         if (this.isFlushing)
@@ -75,11 +78,15 @@ export class ULOGSTransport {
             return;
         }
         try {
+            const body = JSON.stringify({ logs: batch });
+            // keepalive requests are capped (~64KB) by browsers; only use it when the
+            // batch is small enough to survive an unload.
+            const useKeepalive = body.length <= 60_000;
             await fetch(`${this.baseUrl}/logs/send`, {
                 method: "POST",
                 headers: this.headers,
-                body: JSON.stringify({ logs: batch }),
-                keepalive: true,
+                body,
+                keepalive: useKeepalive,
             });
         }
         catch (error) {
@@ -95,13 +102,10 @@ export class ULOGSTransport {
             ...(this.appName ? { "x-ulogs-app-name": this.appName } : {}),
             ...(this.environment ? { "x-ulogs-env": this.environment } : {}),
         };
+        return headers;
     }
     async get(filters, options) {
-        const headers = {
-            "x-api-key": this.apiKey,
-            ...(this.appName ? { "x-ulogs-app-name": this.appName } : {}),
-            ...(this.environment ? { "x-ulogs-env": this.environment } : {}),
-        };
+        const headers = this.buildReadHeaders(options);
         const qs = filters && Object.keys(filters).length > 0
             ? `?${new URLSearchParams(filters).toString()}`
             : "";
@@ -132,13 +136,9 @@ export class ULOGSTransport {
         return result;
     }
     stream(filters, options) {
-        const qs = new URLSearchParams(filters).toString();
-        const url = `${this.baseUrl}/logs/stream?${qs}`;
-        const headers = {
-            "x-api-key": this.apiKey,
-            ...(this.appName ? { "x-ulogs-app-name": this.appName } : {}),
-            ...(this.environment ? { "x-ulogs-env": this.environment } : {}),
-        };
+        const qs = filters ? new URLSearchParams(filters).toString() : "";
+        const url = `${this.baseUrl}/logs/stream${qs ? `?${qs}` : ""}`;
+        const headers = this.buildReadHeaders(options);
         const abortController = new AbortController();
         const readable = new ReadableStream({
             start: async (controller) => {
@@ -146,6 +146,11 @@ export class ULOGSTransport {
                     headers,
                     signal: abortController.signal,
                 });
+                if (!res.ok) {
+                    const text = await res.text().catch(() => "");
+                    controller.error(new Error(`ULOGS stream failed (${res.status}): ${text.slice(0, 200)}`));
+                    return;
+                }
                 if (!res.body) {
                     controller.error(new Error("Upstream stream unavailable"));
                     return;

@@ -16,7 +16,7 @@ export class ApiKeyController {
     }
     @Get(':id')
     async apikeyLastUsed(@Req() req: any, @Param('id') id: string) {
-        return this.apiKeyService.getApiKeyLastUsed(id);
+        return this.apiKeyService.getApiKeyLastUsed(req.user.id, id);
     }
     @Delete(':id')
     async deleteApiKey(@Req() req: any, @Param('id') id: string) {

@@ -10,6 +10,7 @@ import { LogsModule } from './modules/logs/logs.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BillingModule } from './modules/billing/billing.module';
 import { AlertModule } from './modules/alert/alert.module';
+import { UsageDbSync } from './schedulers/usage-db-sync';
 
 @Module({
   imports: [
@@ -24,6 +25,6 @@ import { AlertModule } from './modules/alert/alert.module';
     AlertModule
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, UsageDbSync],
 })
 export class AppModule {}

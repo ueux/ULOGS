@@ -1,6 +1,6 @@
 # ULogs
 
-> A developer-focused observability platform for collecting, exploring, and integrating application logs.
+> A developer-focused observability platform for collecting, exploring, alerting on, and integrating application logs.
 
 [![Status: In Progress](https://img.shields.io/badge/status-in--progress-orange)](#project-status)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -11,10 +11,10 @@
 ULogs is an active monorepo for a log-collection and observability product. The repository currently contains:
 
 - a public marketing site for the product,
-- an authenticated dashboard for users and billing,
-- a NestJS backend for auth, log ingestion, billing, and persistence,
-- a typed Next.js SDK for structured log delivery,
-- local infrastructure for Redis, ClickHouse, NATS, and database access during development.
+- an authenticated dashboard for logs, alerts, queries, API keys, and billing,
+- a NestJS backend for auth, log ingestion, alerting, usage quotas, billing, and persistence,
+- a typed Next.js SDK for structured log delivery and live log reads,
+- local infrastructure for Redis, ClickHouse, NATS JetStream, and database access during development.
 
 This project is still moving toward its first production-ready release, so APIs, infrastructure wiring, and deployment details are expected to evolve while the platform is hardened.
 
@@ -29,6 +29,7 @@ This project is still moving toward its first production-ready release, so APIs,
 - [Available commands](#available-commands)
 - [SDK](#sdk)
 - [Backend API](#backend-api)
+- [Alerts](#alerts)
 - [Billing and invoices](#billing-and-invoices)
 - [Testing](#testing)
 - [Production considerations](#production-considerations)
@@ -40,17 +41,19 @@ This project is still moving toward its first production-ready release, so APIs,
 
 ### Implemented
 
-- Public marketing and landing-page experience.
-- Authenticated dashboard shell with Clerk integration.
-- API-key creation, listing, inspection, revocation, and regeneration endpoints.
-- Clerk bearer-token and API-key authentication paths.
+- Public marketing and landing-page experience (Clerk sign-in/sign-up, pricing, waitlist).
+- Authenticated dashboard: overview metrics, live log tail (SSE with polling fallback), query console, alert management, API-key management, integrations, settings/billing.
+- API-key creation, listing, inspection (last-used), revocation, and regeneration endpoints.
+- Clerk bearer-token and API-key (`x-api-key`, Argon2-hashed) authentication paths.
+- Usage/quota enforcement per plan tier backed by Redis counters with a periodic database sync.
 - PostgreSQL persistence through Neon and Drizzle ORM.
-- Redis-backed API-key caching and last-used tracking.
+- Redis-backed API-key caching, alert caches, and usage counters.
 - Local ClickHouse, ClickHouse UI, and NATS infrastructure through Docker Compose.
-- NestJS log ingestion routes for batched send, list queries, and SSE streaming.
-- Initial `@ulogs/next` SDK package with typed log payloads, buffered delivery, and API-key authentication headers.
-- TestSprite coverage for the API-key service, including authenticated flows where test credentials are available and unauthenticated contract checks.
-- Verified TypeScript builds for both the backend service and the SDK package.
+- NATS JetStream ingestion pipeline: `POST /logs/send` → stream → consumer → ClickHouse insert → alert evaluation.
+- Alert engine: thresholded conditions per rule, Redis bucket counters, cooldown handling, HMAC-signed outbound webhook delivery with SSRF guarding.
+- SSE live-log streaming and a live ingest-metrics stream (rate, backlog, latency).
+- Stripe Checkout, Billing Portal, subscription webhooks (including cancellation downgrade), and persisted invoices.
+- `@ulogs/next` SDK with typed log payloads, buffered delivery, graceful-shutdown flush, authenticated reads (`get`/`stream`), inbound webhook verification, and React data hooks.
 
 ### In progress
 
@@ -63,22 +66,28 @@ This project is still moving toward its first production-ready release, so APIs,
 
 ```mermaid
 flowchart LR
-    Visitor[Visitor] --> Landing[Landing page\nNext.js]
-    User[Authenticated user] --> Dashboard[Main dashboard\nNext.js + Clerk]
-    Dashboard --> API[NestJS API\n/api/v1]
+    Visitor[Visitor] --> Landing[Landing page\nNext.js :3000]
+    User[Authenticated user] --> Dashboard[Main dashboard\nNext.js + Clerk :3001]
+    SDK[App using @ulogs/next] -->|POST /logs/send| API[NestJS API\n/api/v1]
+    Dashboard --> API
+    Dashboard -->|SSE proxy| API
+    Landing --> API
     API --> Clerk[Clerk\nToken verification]
     API --> Postgres[(Neon PostgreSQL\nDrizzle ORM)]
-    API --> Redis[(Redis 7\nCache and locks)]
-    API -. in progress .-> ClickHouse[(ClickHouse\nLog analytics)]
-    API -. planned .-> NATS[NATS JetStream\nLog transport]
+    API --> Redis[(Redis 7\nCache + usage counters)]
+    API --> NATS[NATS JetStream\nLog transport]
+    NATS --> Consumer[Ingest consumer]
+    Consumer --> ClickHouse[(ClickHouse\nLog analytics)]
+    Consumer --> AlertConsumer[Alert evaluator]
+    AlertConsumer --> Webhook[Customer webhooks\nHMAC-signed]
 ```
 
 The repository contains three independently runnable applications plus an SDK package:
 
 - **Landing page:** public product and integration experience.
 - **Main dashboard:** authenticated product interface.
-- **Services:** NestJS API and persistence/authentication boundary.
-- **SDK:** `@ulogs/next`, a typed Node/Next.js logging client under active development.
+- **Services:** NestJS API, ingestion pipeline, alerting, billing, and persistence boundary.
+- **SDK:** `@ulogs/next`, a typed Node/Next.js logging client.
 
 ## Repository layout
 
@@ -87,8 +96,15 @@ The repository contains three independently runnable applications plus an SDK pa
 ├── apps/
 │   ├── landing-page/       # Public Next.js marketing site
 │   └── main-dashboard/     # Authenticated Next.js dashboard and user workspace
-├── services/               # NestJS API, database layer, Stripe hooks, and local infra
+├── services/               # NestJS API, database layer, NATS pipeline, Stripe hooks, local infra
 │   ├── src/
+│   │   ├── modules/        # alert, api-key, billing, logs
+│   │   ├── nats/           # JetStream publish/consume, ingest + alert consumers
+│   │   ├── clickhouse/     # log analytics client
+│   │   ├── database/       # Drizzle/Neon client and schema
+│   │   ├── guards/         # AuthGuard, UsageGuard
+│   │   ├── schedulers/     # usage DB-sync cron
+│   │   └── sse/            # SSE client registry
 │   ├── test/
 │   ├── drizzle/            # Generated database migrations
 │   ├── docker-compose.yml  # Local Redis, ClickHouse, UI, and NATS services
@@ -106,6 +122,8 @@ The repository contains three independently runnable applications plus an SDK pa
 
 Each app and service has its own `package.json`, lockfile, TypeScript configuration, and dependency installation. There is no root-level workspace package manager yet, so install and run commands are executed from each package directory unless the app intentionally exposes a shared script.
 
+> **Note:** both Next.js apps in this repo run a modified Next.js release. The middleware file is named `proxy.ts` (not `middleware.ts`), and app-specific docs live in each project's `AGENTS.md` and `node_modules/next/dist/docs/`.
+
 ## Prerequisites
 
 - Node.js 20 or newer (Node.js 24 is used in the current development environment).
@@ -113,6 +131,7 @@ Each app and service has its own `package.json`, lockfile, TypeScript configurat
 - Docker Desktop, for local Redis, ClickHouse, ClickHouse UI, and NATS.
 - A Neon PostgreSQL database and connection string.
 - A Clerk application with a secret key for authenticated API requests.
+- A Stripe account with recurring subscription prices for billing flows.
 - A TestSprite account and API key only when running TestSprite MCP tests.
 
 ## Configuration
@@ -126,30 +145,48 @@ PORT=8080
 DATABASE_URL=postgresql://<user>:<password>@<host>/<database>?sslmode=require
 REDIS_HOST=localhost
 REDIS_PORT=6379
-REDIS_PASSWORD=ulogs
+REDIS_PASSWORD=***
 REDIS_DB=0
 REDIS_KEY_SECRET=<random-secret>
 CLERK_SECRET_KEY=<clerk-secret-key>
+CLICKHOUSE_URL=http://localhost:8123
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=
+CLICKH…ogs
+NATS_URL=nats://localhost:4222
 STRIPE_SECRET_KEY=<stripe-secret-key>
 STRIPE_WEBHOOK_SECRET=<stripe-webhook-signing-secret>
 STRIPE_STARTER_PRICE_ID=<stripe-starter-price-id>
 STRIPE_PRO_PRICE_ID=<stripe-pro-price-id>
 STRIPE_BUSINESS_PRICE_ID=<stripe-business-price-id>
+WEBHOOK_SIGNING_SECRET=<rando…pts>
 APP_URL=http://localhost:3000
 ```
 
-`REDIS_KEY_SECRET` is used to derive API-key cache digests and should be a long, random value. Use a secret manager for shared or production environments.
-
-The Stripe price IDs must refer to recurring subscription prices in the same Stripe account as `STRIPE_SECRET_KEY`. `APP_URL` is used for Stripe Checkout and Billing Portal return URLs.
+- `REDIS_KEY_SECRET` is used to derive API-key cache digests and should be a long, random value.
+- `WEBHOOK_SIGNING_SECRET` signs outbound alert webhooks so receivers (and the SDK's `verifyWebhook`) can authenticate them.
+- The Stripe price IDs must refer to recurring subscription prices in the same Stripe account as `STRIPE_SECRET_KEY`. `APP_URL` is used for Stripe Checkout and Billing Portal return URLs.
+- Use a secret manager for shared or production environments.
 
 ### Main dashboard: `apps/main-dashboard/.env`
 
 ```dotenv
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
 NEXT_PUBLIC_SERVER_URI=http://localhost:8080/api/v1
+NEXT_PUBLIC_MARKETING_URL=http://localhost:3000
+ULOGS_API_KEY=<one-of-your-ULOG-keys>
 ```
 
-The dashboard obtains a Clerk session token in the browser and sends it to the backend as a bearer token.
+The dashboard obtains a Clerk session token in the browser and forwards it to the backend through its server-side API proxy routes. `NEXT_PUBLIC_MARKETING_URL` is where unauthenticated visitors are redirected by `proxy.ts`.
+
+### Landing page: `apps/landing-page/.env`
+
+```dotenv
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
+NEXT_PUBLIC_DASHBOARD_URL=http://localhost:3001
+```
+
+`NEXT_PUBLIC_DASHBOARD_URL` is the target of all "Get Started / Dashboard / Billing" links on the marketing site.
 
 ### SDK: `sdks/ulogs-next`
 
@@ -159,11 +196,7 @@ The SDK uses the local API by default. Override the endpoint for staging or prod
 ULOGS_BASE_URL=https://api.example.com/api/v1
 ```
 
-The current transport reads `ULOGS_BASE_URL` at runtime and falls back to `http://localhost:8080/api/v1`.
-
-### Landing page
-
-Review the landing-page authentication and configuration code before deployment. Do not copy production credentials into source control or frontend bundles unless the variable is explicitly intended to be public.
+The transport reads `ULOGS_BASE_URL` at runtime and falls back to `http://localhost:8080/api/v1`.
 
 ## Getting started
 
@@ -182,12 +215,14 @@ cd ..\landing-page
 npm install
 
 cd ..\..\sdks\ulogs-next
-npm install
+npm install && npm run build
 ```
+
+The dashboard consumes the SDK as a local `file:` dependency, so rebuild the SDK (`npm run build` in `sdks/ulogs-next`) after every SDK source change.
 
 ### 2. Configure the backend
 
-Create `services/.env` using the template above and provide a valid Neon `DATABASE_URL` and Clerk secret. Ensure the database schema is available before starting authenticated API flows.
+Create `services/.env` using the template above and provide a valid Neon `DATABASE_URL` and Clerk secret. Ensure the database schema is migrated (`npm run db:migrate` or `db:push`) before starting authenticated API flows.
 
 ### 3. Start local infrastructure
 
@@ -215,25 +250,25 @@ npm run start:dev
 
 The API listens on `http://localhost:8080` and uses the versioned base path `http://localhost:8080/api/v1`.
 
-### 5. Start the dashboard
-
-```powershell
-cd apps\main-dashboard
-npm run dev
-```
-
-Open `http://localhost:3000`.
-
-### 6. Start the landing page
-
-Use a separate terminal:
+### 5. Start the landing page
 
 ```powershell
 cd apps\landing-page
 npm run dev
 ```
 
-If port `3000` is already in use by the dashboard, start the landing page on another Next.js development port.
+Open `http://localhost:3000`.
+
+### 6. Start the dashboard
+
+Use a separate terminal and a different port (both apps default to `next dev` on 3000):
+
+```powershell
+cd apps\main-dashboard
+npx next dev -p 3001
+```
+
+Open `http://localhost:3001`. The landing page links to it through `NEXT_PUBLIC_DASHBOARD_URL`, and the dashboard redirects unauthenticated visitors back to `NEXT_PUBLIC_MARKETING_URL`.
 
 ## Available commands
 
@@ -275,7 +310,7 @@ The SDK keeps its TypeScript implementation under `src/` locally. The repository
 
 ## SDK
 
-The current package is `@ulogs/next`. It exposes `createLogger`, `ULOGSTransport`, and the public log types.
+The current package is `@ulogs/next`. It exposes `createLogger`, `ULOGSTransport`, the React data hooks (`getLogs`, `getStream`), and the public log types. See [`sdks/ulogs-next/README.md`](sdks/ulogs-next/README.md) for the full reference.
 
 ```typescript
 import { createLogger } from "@ulogs/next";
@@ -293,7 +328,7 @@ await logger.info({
 });
 ```
 
-The transport buffers logs and sends batches to `POST /logs/send` below the configured API base URL. The backend route exists in the NestJS service, and the SDK package builds successfully. Publish the SDK only from the private source workspace because the GitHub-facing package layout intentionally excludes `src/`.
+Writes are buffered and flushed in batches (2-second interval, plus a graceful-shutdown flush of every active transport) to `POST /logs/send`. Reads (`logger.get`, `logger.stream`) authenticate with the API key by default, or with a Clerk bearer token via the optional `authToken` request option. Publish the SDK only from the private source workspace because the GitHub-facing package layout intentionally excludes `src/`.
 
 ## Backend API
 
@@ -303,7 +338,7 @@ The backend uses a global `/api` prefix and URI versioning. The current API base
 http://localhost:8080/api/v1
 ```
 
-All API-key routes require authentication through either a valid Clerk bearer token or a valid `x-api-key` header.
+All routes require authentication through either a valid Clerk bearer token or a valid `x-api-key` header, except `POST /billing/webhook` (Stripe signature auth). Alert and ingestion routes additionally pass through `UsageGuard`, which enforces plan-tier quotas.
 
 | Method   | Endpoint                          | Description                                              |
 | -------- | --------------------------------- | -------------------------------------------------------- |
@@ -312,11 +347,20 @@ All API-key routes require authentication through either a valid Clerk bearer to
 | `GET`    | `/api/v1/api-keys/:id`            | Retrieve last-used metadata for a key                    |
 | `DELETE` | `/api/v1/api-keys/:id`            | Revoke an owned key                                      |
 | `POST`   | `/api/v1/api-keys/:id/regenerate` | Generate a replacement secret for an owned key           |
-| `POST`   | `/api/v1/logs/send`               | Receive a batched payload of logs from the SDK           |
-| `GET`    | `/api/v1/logs`                    | Query historical logs for the authenticated user         |
-| `GET`    | `/api/v1/logs/stream`             | Open an SSE stream for live log delivery                 |
+| `POST`   | `/api/v1/logs/send`               | Receive a batched payload of logs (published to NATS)    |
+| `GET`    | `/api/v1/logs`                    | Query historical logs (`type`, `appName`, `env`, `search`, `from`, `to`, `limit`) |
+| `GET`    | `/api/v1/logs/stream`             | SSE stream: initial backlog then live delivery           |
+| `GET`    | `/api/v1/logs/get-dashboard-logs` | Aggregated dashboard stats for a time range              |
+| `GET`    | `/api/v1/logs/metrics/stream`     | SSE stream of ingest rate, backlog, and latency metrics  |
+| `GET`    | `/api/v1/alerts`                  | List alert rules for the authenticated user              |
+| `POST`   | `/api/v1/alerts`                  | Create an alert rule (name, conditions, threshold, webhook URL, cooldown) |
+| `POST`   | `/api/v1/alerts/verify-webhook`   | Verify an inbound HMAC-signed alert webhook (API-key auth) |
 
 API keys are stored as Argon2 hashes. The plaintext secret is not returned by listing endpoints and should be copied securely immediately after creation.
+
+## Alerts
+
+Alert rules evaluate ingested logs against conditions (field/operator/value on `type`, `importance`, `environment`, and message search) with a `{ count, windowMinutes }` threshold and a per-rule cooldown. Matching is done by the NATS alert consumer using Redis bucket counters; when a rule fires, a HMAC-signed webhook is delivered to the configured URL (retries are governed by the cooldown). Outbound webhook URLs are validated against localhost, private, and link-local ranges (SSRF guard) before any request is made. The dashboard's Alerts page creates rules and verifies the webhook destination client-side before saving.
 
 ## Billing and invoices
 
@@ -341,13 +385,16 @@ The current implementation handles a Stripe webhook as follows:
 3. `BillingService` reads `STRIPE_WEBHOOK_SECRET` and calls Stripe's `constructEvent`. Missing or invalid signatures are rejected before event processing.
 4. The service dispatches supported event types:
 
-- `checkout.session.completed` activates the selected paid plan.
+- `checkout.session.completed` activates the selected paid plan and raises the usage quota.
 - `customer.subscription.created` and `customer.subscription.updated` synchronize the paid plan.
+- `customer.subscription.deleted` downgrades the user to the free plan and resets quota sources.
 - `invoice.created`, `invoice.finalized`, `invoice.payment_failed`, and `invoice.voided` save invoice state.
 - `invoice.paid` and `invoice.payment_succeeded` save invoice state and synchronize the paid plan from invoice metadata or its price ID.
 
 5. `saveInvoice()` extracts Stripe customer/subscription IDs, resolves the application user, converts Unix timestamps to dates, and upserts the record in `payment_invoices` using `stripe_invoice_id` as the conflict key.
 6. The webhook responds with `{ "recieved": true }` after the selected handler completes. (The response key is currently spelled `recieved` in the implementation.)
+
+Usage counters live in Redis (`ulogs:usage:v1:{userId}`, with a 6-minute TTL) and are synced back to the database by a scheduled job (`services/src/schedulers/usage-db-sync.ts`).
 
 Invoice ownership is intentionally scoped to the authenticated application user. If an invoice has no matching `userId` metadata and no matching `plan` row for its subscription or customer, `saveInvoice()` skips it and the webhook still returns successfully. Check the Stripe event payload, the `plan` table, and the service's `DATABASE_URL` when an invoice appears in Stripe but not in the dashboard database. The API does not import historical invoices directly from Stripe; resend the event after the webhook and ownership configuration is correct.
 
@@ -397,8 +444,8 @@ Before calling this project production-ready:
 - Replace local Redis credentials and configure TLS, network restrictions, persistence, monitoring, and backups as appropriate.
 - Add a public health/readiness endpoint for load balancers and tunnel-based testing.
 - Align the production start script with the actual Nest build output.
-- Complete ClickHouse ingestion, retention, indexing, and query paths for log data.
-- Add structured logging, tracing, metrics, alerting, and error tracking.
+- Define ClickHouse retention, TTL, and partitioning policies for long-lived log data.
+- Add structured logging, tracing, metrics, alerting, and error tracking for the platform itself.
 - Secure ClickHouse and NATS credentials/configuration; the local Compose file currently uses development defaults.
 - Add rate limiting and abuse protection to authentication and API-key endpoints.
 - Complete the SDK retry/error semantics and provide a documented ingestion contract before publishing it for production use.
@@ -413,6 +460,7 @@ Before calling this project production-ready:
 - Treat API-key plaintext values as one-time secrets.
 - Keep server-only credentials out of `NEXT_PUBLIC_*` variables and browser bundles.
 - Do not expose `x-api-key` values in client-side applications; the SDK is intended for server-side usage.
+- Alert webhook URLs are validated against private and loopback address ranges (SSRF guard); keep outbound traffic on `http`/`https` only.
 - Prefer short-lived credentials and least-privilege database roles.
 - Report security issues privately to the project maintainers rather than opening a public issue with exploit details.
 
@@ -433,3 +481,4 @@ The repository does not currently declare a finalized open-source license. Treat
 - [`services/README.md`](services/README.md) — NestJS service notes
 - [`apps/main-dashboard/README.md`](apps/main-dashboard/README.md) — dashboard notes
 - [`apps/landing-page/README.md`](apps/landing-page/README.md) — landing-page notes
+- [`sdks/ulogs-next/README.md`](sdks/ulogs-next/README.md) — SDK reference

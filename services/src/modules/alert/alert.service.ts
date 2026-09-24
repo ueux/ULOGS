@@ -37,7 +37,7 @@ const ALLOWED_FIELDS = new Set([
   'Type',
   'Message',
   'Importance',
-  'Evironment',
+  'Environment',
   'Service',
   'Subsystem',
   'Operation',
@@ -53,6 +53,8 @@ const ALLOWED_IMPORTANCE_VALUES = new Set([
 ]);
 
 const WEBHOOK_VERIFICATION_TTL_SECONDS = 15 * 60;
+
+export const ALERT_CACHE_TTL_SECONDS = 5 * 60;
 
 @Injectable()
 export class AlertService {
@@ -167,10 +169,14 @@ export class AlertService {
     if (!payload.webhook?.url?.trim()) {
       throw new BadRequestException('Webhook URL is required');
     }
+    let webhookHost: URL;
     try {
-      new URL(payload.webhook.url);
+      webhookHost = new URL(payload.webhook.url);
     } catch {
       throw new BadRequestException('Webhook URL must be a valid URL');
+    }
+    if (webhookHost.protocol !== 'http:' && webhookHost.protocol !== 'https:') {
+      throw new BadRequestException('Webhook URL must use http or https');
     }
     if (!payload.cooldownPeriod?.trim()) {
       throw new BadRequestException('Cooldown period is required');
@@ -192,7 +198,7 @@ export class AlertService {
       .where(eq(alerts.user_id, userId))
       .orderBy(desc(alerts.created_at));
 
-    await this.redis.set(cacheKey, JSON.stringify(userAlerts));
+    await this.redis.set(cacheKey, JSON.stringify(userAlerts), 'EX', ALERT_CACHE_TTL_SECONDS);
     return userAlerts;
   }
   async verifyWebhook({

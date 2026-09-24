@@ -41,8 +41,17 @@ type BackendAlert = {
   created_at: string | null;
 }
 
-export default function Page() {
-  // Derived/extra data for new sections (kept client-side for now)
+// ingested_at may arrive as epoch millis (number) or a "YYYY-MM-DD HH:MM:SS" string
+function toDateSafe(value: unknown): Date | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return new Date(value);
+  const s = String(value);
+  const iso = s.includes("T") ? s : s.replace(" ", "T");
+  const date = new Date(/[Zz]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso + "Z");
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export default function Page() {  // Derived/extra data for new sections (kept client-side for now)
   const health = [
     { name: "Ingest Service", status: "healthy" },
     { name: "Alerting Service", status: "healthy" },
@@ -150,9 +159,7 @@ export default function Page() {
 
       // Fill buckets
       logs.forEach((log) => {
-        const dateStr = log.ingested_at?.replace(" ", "T") + "Z";
-        const date = dateStr ? new Date(dateStr) : new Date();
-
+        const date = toDateSafe(log.ingested_at) ?? new Date();
         const hour = date.getHours();
         const bucket = buckets.find((b) => b.hour === hour);
         if (bucket) {
@@ -185,8 +192,7 @@ export default function Page() {
           errors: b.errors,
         })),
         topActivity: logs.slice(0, 5).map((log) => {
-          const dateStr = log.ingested_at?.replace(" ", "T") + "Z";
-          const date = dateStr ? new Date(dateStr) : new Date();
+          const date = toDateSafe(log.ingested_at) ?? new Date();
           const time = date.toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -565,7 +571,7 @@ export default function Page() {
                 </div>
               ) : (
                 <div className="flex h-full items-center justify-center">
-                  Enough data not availableryet!
+                  Enough data not available yet!
                 </div>
               )
 

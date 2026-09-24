@@ -1,98 +1,114 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# ULogs Services
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS backend for the ULogs observability platform: authentication, log ingestion, alerting, usage quotas, billing (Stripe), and persistence.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+The API is served under a global `api` prefix with URI versioning, so every route lives at:
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```text
+http://localhost:8080/api/v1
 ```
 
-## Compile and run the project
+## Module map
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```text
+src/
+├── modules/
+│   ├── api-key/     # Create/list/inspect/revoke/regenerate API keys (Argon2-hashed)
+│   ├── logs/        # POST /logs/send (NATS publish), GET /logs (ClickHouse), SSE stream,
+│   │                # dashboard aggregates, live metrics stream
+│   ├── alert/       # Alert rule CRUD + inbound webhook signature verification
+│   └── billing/     # Stripe Checkout, Billing Portal, invoices, webhook handling, plan sync
+├── nats/            # JetStream setup, ingest consumer (ClickHouse insert), alert consumer
+│                    # (condition matching, Redis buckets, HMAC-signed outbound webhooks)
+├── clickhouse/      # ClickHouse client + log table bootstrap
+├── database/        # Drizzle ORM client (Neon Postgres) and schema
+├── guards/          # AuthGuard (Clerk bearer OR x-api-key), UsageGuard (plan quotas)
+├── schedulers/      # @nestjs/cron sync of Redis usage counters back to Postgres
+├── sse/             # SSE client registry used to broadcast live logs/metrics
+├── infra/           # Redis and other infrastructure helpers
+└── utils/           # Key digests, shared helpers
 ```
 
-## Run tests
+## How ingestion works
+
+1. SDKs POST batches to `/api/v1/logs/send`; the request is authenticated by `AuthGuard` and checked against the plan quota by `UsageGuard`.
+2. Events are published to a NATS JetStream subject and acknowledged immediately.
+3. The ingest consumer (`src/nats/consumer.ts`) batches messages into ClickHouse, updates Redis usage counters and live metrics (`ingest:events`, `ingest:last_rate`, `ingest:avg_latency`), and publishes an evaluation event per log.
+4. The alert consumer (`src/nats/alert.consumer.ts`) matches each log against the user's alert rules (Redis-cached with a TTL and a DB fallback), counts matches in windowed buckets, respects per-rule cooldowns, and delivers HMAC-signed webhooks to validated public URLs (SSRF guard blocks loopback/private ranges).
+5. Dashboard live views consume `GET /logs/stream` and `GET /logs/metrics/stream` through the SSE registry.
+
+## Prerequisites
+
+- Node.js 20+ and npm 10+.
+- Docker Desktop for the local Redis / ClickHouse / ClickHouse UI / NATS stack.
+- A Neon PostgreSQL URL, a Clerk secret key, and (for billing) Stripe secret + webhook credentials.
+
+## Configuration (`services/.env`)
+
+| Variable | Purpose |
+| --- | --- |
+| `PORT` | HTTP port (dev convention: `8080`; falls back to `3000` if unset) |
+| `DATABASE_URL` | Neon Postgres connection string used by Drizzle |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_DB` | Redis connection |
+| `REDIS_KEY_SECRET` | Pepper used to derive API-key cache digests — long random value |
+| `CLERK_SECRET_KEY` | Clerk token verification in `AuthGuard` |
+| `CLICKHOUSE_URL` / `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` / `CLICKHOUSE_DB` | ClickHouse connection (defaults to `http://localhost:8123`, db `logs`) |
+| `NATS_URL` | NATS server (default `nats://localhost:4222`) |
+| `STRIPE_SECRET_KEY` | Stripe API key |
+| `STRIPE_WEBHOOK_SECRET` | Verifies `POST /billing/webhook` signatures |
+| `STRIPE_STARTER_PRICE_ID` / `STRIPE_PRO_PRICE_ID` / `STRIPE_BUSINESS_PRICE_ID` | Recurring prices per plan tier |
+| `WEBHOOK_SIGNING_SECRET` | HMAC secret for outbound alert webhooks |
+| `APP_URL` | Stripe Checkout/Portal return URL base |
+
+Never commit `.env`. Rotate anything that leaks.
+
+## Local infrastructure
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker compose up -d   # redis :6379, clickhouse :8123/:9000, ch-ui :5521, nats :4222 (monitoring :8222)
+docker compose ps      # inspect
+docker compose down    # stop
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Commands
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm install
+
+npm run start:dev      # watch mode (main entry: src/main.ts)
+npm run build          # nest build → dist/src/main.js
+
+npm run db:generate    # drizzle-kit: generate migrations from schema changes
+npm run db:migrate     # apply migrations
+npm run db:push        # push schema directly (development only)
+
+npm run test           # jest unit tests
+npm run test:e2e       # jest e2e tests
+npm run test:cov       # coverage
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+> **Known script mismatch:** `npm run start:prod` targets `dist/main`, but the current build emits `dist/src/main.js`. Until the script is fixed, run production mode with:
+>
+> ```bash
+> npm run build && node dist/src/main.js
+> ```
 
-## Resources
+## Auth model
 
-Check out a few resources that may come in handy when working with NestJS:
+- **User-facing routes** (dashboard): `Authorization: Bearer <Clerk session token>`.
+- **Machine-facing routes** (SDKs): `x-api-key: ULOG_...`, verified against Argon2 hashes with Redis/LRU caching; last-used timestamps tracked per key.
+- **Stripe webhook** (`POST /billing/webhook`): no Clerk auth; verified via `stripe-signature` + `STRIPE_WEBHOOK_SECRET` against the raw request body (`rawBody: true`).
+- **Alert webhook verification** (`POST /alerts/verify-webhook`): lets SDK consumers verify inbound HMAC-signed alert deliveries with their API key.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Testing Stripe webhooks locally
 
-## Support
+```bash
+stripe listen --forward-to localhost:8080/api/v1/billing/webhook
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Copy the printed `whsec_...` into `STRIPE_WEBHOOK_SECRET` and restart the service. See the root [README](../README.md#billing-and-invoices) for the full event-handling flow.
 
-## Stay in touch
+## Notes
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- `services/schedulers/usage-db-sync.ts` (outside `src/`) is a stale pre-move copy of the cron job; the live one is `src/schedulers/usage-db-sync.ts`, registered in `app.module.ts`. The old file can be deleted.
+- Quota counters live in Redis with TTLs; the scheduled sync persists them to Postgres, so counters survive cache eviction but can lag by up to one cron interval.

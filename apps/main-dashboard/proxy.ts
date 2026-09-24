@@ -5,7 +5,14 @@ export default clerkMiddleware(async (auth, req) => {
   const { userId } = await auth();
 
   if (!userId) {
-    return NextResponse.redirect("http://localhost:3000");
+    if (req.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL;
+    if (marketingUrl) {
+      return NextResponse.redirect(marketingUrl);
+    }
+    return NextResponse.redirect(new URL("/sign-in", req.url));
   }
 });
 

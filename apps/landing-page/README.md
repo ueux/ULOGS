@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ULogs Landing Page
 
-## Getting Started
+Public Next.js (App Router) marketing site for [ULogs](https://ulogs.com): product story, features, integrations, pricing, waitlist, and Clerk-hosted sign-in/sign-up.
 
-First, run the development server:
+This app is part of the [ULogs monorepo](../../README.md). It holds no product data — authenticated functionality lives in [`apps/main-dashboard`](../main-dashboard/README.md), and every "Dashboard / Get Started / Billing" link on this site points there via an environment variable.
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment (`.env`)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Purpose |
+| --- | --- |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk browser key |
+| `CLERK_SECRET_KEY` | Clerk server key for the middleware/session checks |
+| `NEXT_PUBLIC_DASHBOARD_URL` | Target of dashboard links (dev convention: `http://localhost:3001`) |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+`NEXT_PUBLIC_DASHBOARD_URL` is consumed in `LandingHeader`, `LandingHero`, and `LandingCTA`; it falls back to `http://localhost:3001` when unset.
 
-## Learn More
+## Routes
 
-To learn more about Next.js, take a look at the following resources:
+| Path | Description |
+| --- | --- |
+| `/` | Marketing page: hero, story, features, integrations, pricing (`#pricing`), CTA |
+| `/sign-in`, `/sign-up` | Clerk hosted auth components (`[[...rest]]` catch-all routes) |
+| `/waitlist` | Clerk-based waitlist page |
+| `/terms`, `/privacy` | Legal pages |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The header shows Log in / Get Started when signed out; when signed in it renders an avatar dropdown linking to the dashboard, billing, and settings plus a sign-out action.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Middleware
 
-## Deploy on Vercel
+> **This app runs a modified Next.js release: the middleware file is `proxy.ts`, not `middleware.ts`.** Framework docs live in `node_modules/next/dist/docs/`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`proxy.ts` is a plain `clerkMiddleware()` with the default Next matcher (skips `_next` internals and static assets, always runs for `/api/*`).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Scripts
+
+```bash
+npm run dev     # next dev
+npm run build   # production build
+npm run start   # serve production build
+npm run lint    # eslint
+```
+
+## Notes
+
+- Styling is Tailwind + shadcn-style components under `components/ui`; marketing sections live in `components/landing`.
+- Keep secrets out of `NEXT_PUBLIC_*` variables; anything prefixed with it ships to the browser.
+- Pricing tiers here should stay in sync with the Stripe prices configured in [`services/.env`](../../services/README.md#configuration-servicesenv).

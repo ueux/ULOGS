@@ -14,7 +14,7 @@ export function LandingCTA() {
         </p>
         <div className="mt-8 flex justify-center gap-4">
           <Link
-            href="/dashboard"
+            href={process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "http://localhost:3001"}
             className="inline-flex items-center justify-center rounded-md bg-sky-500/90 px-6 py-3 text-sm font-semibold tracking-tight text-slate-950 shadow-sm hover:bg-sky-400 transition-colors"
           >
             Get Started

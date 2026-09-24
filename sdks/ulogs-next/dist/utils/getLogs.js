@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 const inflight = new Map();
 const cache = new Map();
+const CACHE_MAX_AGE_MS = 15_000;
 function buildKey(params) {
     const sp = new URLSearchParams();
     Object.entries(params || {}).forEach(([k, v]) => {
@@ -17,8 +18,9 @@ export function getLogs(filters) {
     const [error, setError] = useState(null);
     const key = useMemo(() => buildKey(filters), [filters]);
     const fetchOnce = useCallback(async (k) => {
-        if (cache.has(k)) {
-            return cache.get(k);
+        const cachedEntry = cache.get(k);
+        if (cachedEntry && Date.now() - cachedEntry.ts < CACHE_MAX_AGE_MS) {
+            return cachedEntry.value;
         }
         let p = inflight.get(k);
         if (!p) {
@@ -34,7 +36,7 @@ export function getLogs(filters) {
         }
         try {
             const result = await p;
-            cache.set(k, result);
+            cache.set(k, { value: result, ts: Date.now() });
             return result;
         }
         finally {
@@ -67,6 +69,6 @@ export function getLogs(filters) {
     const refetch = useCallback(async () => {
         cache.delete(key);
         await fetchLogs();
-    }, []);
+    }, [key, fetchLogs]);
     return { data, isLoading, error, refetch };
 }

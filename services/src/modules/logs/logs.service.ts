@@ -83,7 +83,14 @@ export class LogsService {
     const rs = await clickhouse.query({
       query,
       format: 'JSONEachRow',
-      query_params: { userId, type, env, appName, search, limit },
+      query_params: {
+        userId,
+        type,
+        env,
+        appName,
+        search: search ? `%${search}%` : search,
+        limit,
+      },
     });
     const initialRows = await rs.json();
     res.write(
@@ -105,6 +112,8 @@ export class LogsService {
       appName?: string;
       search?: string;
       range?: string;
+      from?: string;
+      to?: string;
     } = {};
     const raw = queryObj.query as string | undefined;
 
@@ -122,6 +131,8 @@ export class LogsService {
         else if (key === 'search') filters.search = val;
         else if (key === 'limit') filters.limit = Number(val);
         else if (key === 'range') filters.range = val;
+        else if (key === 'from') filters.from = val;
+        else if (key === 'to') filters.to = val;
       }
     }
     if (queryObj.type) filters.type = String(queryObj.type);
@@ -129,6 +140,8 @@ export class LogsService {
     if (queryObj.appName) filters.appName = String(queryObj.appName);
     if (queryObj.search) filters.search = String(queryObj.search);
     if (queryObj.range) filters.range = String(queryObj.range);
+    if (queryObj.from) filters.from = String(queryObj.from);
+    if (queryObj.to) filters.to = String(queryObj.to);
     if (queryObj.limit) filters.limit = Number(queryObj.limit);
 
     return filters;
@@ -257,7 +270,7 @@ export class LogsService {
           type,
           env,
           appName,
-          search,
+          search: search ? `%${search}%` : search,
           from: timestampFrom,
           to: timestampTo,
           limit,

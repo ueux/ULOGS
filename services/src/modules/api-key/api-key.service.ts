@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DRIZZLE_DB } from '../../database/database.module';
 import { REDIS_CLIENT } from '../../infra/redis.module';
 import Redis from 'ioredis';
@@ -93,19 +98,27 @@ export class APIKeyService {
     localCache.delete(`${VERSION}:${keyId}`);
     return { key: plaintextKey };
   }
-  async getApiKeyLastUsed(keyId: string) {
+  async getApiKeyLastUsed(userId: string, keyId: string) {
     const normalizedKey = keyId.replace(/-/g, '');
+
+    const [owned] = await this.db
+      .select({
+        id: api_key.id,
+        last_used_at: api_key.last_used_at,
+      })
+      .from(api_key)
+      .where(and(eq(api_key.id, normalizedKey), eq(api_key.user_id, userId)))
+      .limit(1);
+    if (!owned) {
+      throw new NotFoundException('API key not found');
+    }
+
     const redisValue = await this.redis.hget(LAST_USED_HASH, normalizedKey);
 
     if (redisValue) {
       return { last_used_at: new Date(Number(redisValue)) };
     }
 
-    const [record] = await this.db
-      .select({ last_used_at: api_key.last_used_at })
-      .from(api_key)
-      .where(eq(api_key.id, keyId))
-      .limit(1);
-    return { last_used_at: record?.last_used_at ?? null };
+    return { last_used_at: owned.last_used_at ?? null };
   }
 }

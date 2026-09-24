@@ -3,7 +3,8 @@ import { getNats } from '.';
 import { consumerOpts } from 'nats';
 import { db } from '../database/client';
 import { alerts } from '../database/schema';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
+import { ALERT_CACHE_TTL_SECONDS } from '../modules/alert/alert.service';
 import { randomUUID } from 'crypto';
 import crypto from 'crypto';
 type AlertCondition = {
@@ -72,7 +73,7 @@ function matchCondition(log: any, condition: AlertCondition) {
       return Number(actual) === expectedImportance;
     }
 
-    if (condition.operator === 'not_equals') {
+    if (condition.operator === 'does not equal') {
       return Number(actual) !== expectedImportance;
     }
     return false;
@@ -80,16 +81,34 @@ function matchCondition(log: any, condition: AlertCondition) {
   switch (condition.operator) {
     case 'equals':
       return normalize(actual) === normalize(expected);
-    case 'not_equals':
+    case 'does not equal':
       return normalize(actual) !== normalize(expected);
     default:
       return false;
   }
 }
 function parseCooldownSeconds(input: string) {
-  if (input.includes('minute')) return parseInt(input) * 60;
-  if (input.includes('second')) return parseInt(input);
+  const amount = Number.parseInt(input, 10);
+  if (!Number.isFinite(amount) || amount <= 0) return 300;
+  if (input.includes('second')) return amount;
+  if (input.includes('minute')) return amount * 60;
+  if (input.includes('hour')) return amount * 3600;
+  if (input.includes('day')) return amount * 86400;
   return 300;
+}
+
+const PRIVATE_HOST_PATTERN =
+  /^(localhost|.*\.local|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[?::1\]?$)/i;
+
+function assertPublicWebhook(url: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  return !PRIVATE_HOST_PATTERN.test(parsed.hostname);
 }
 
 const redis = new Redis({
@@ -204,11 +223,23 @@ export async function startAlertConsumer() {
 
       for (const [userId, userLogs] of logsByUser) {
         const redisKey = `ulogs:alerts:${userId}`;
-        const cached = await redis.get(redisKey);
-        if (!cached) continue;
-        const rules: AlertRule[] = JSON.parse(cached).filter(
-          (r: AlertRule) => r.status === 'active',
-        );
+        let cached = await redis.get(redisKey);
+        if (!cached) {
+          const userAlerts = await db
+            .select()
+            .from(alerts)
+            .where(eq(alerts.user_id, userId))
+            .orderBy(desc(alerts.created_at));
+          cached = JSON.stringify(userAlerts);
+          await redis.set(
+            redisKey,
+            cached,
+            'EX',
+            ALERT_CACHE_TTL_SECONDS,
+          );
+        }
+        const allRules: AlertRule[] = JSON.parse(cached);
+        const rules = allRules.filter((r) => r.status === 'active');
         for (const rule of rules) {
           const matchedLogs = userLogs.filter((log) => {
             if (rule.appName && log.appName !== rule.appName) return false;
@@ -232,8 +263,25 @@ export async function startAlertConsumer() {
           const cooldownExists = await redis.get(cooldownKey);
           if (cooldownExists) continue;
 
+          if (!assertPublicWebhook(rule.webhook_url)) {
+            console.warn('Skipping alert with blocked webhook URL', {
+              alertId: rule.id,
+              webhookUrl: rule.webhook_url,
+            });
+            continue;
+          }
+
           const triggeredAt = new Date().toISOString();
-          const webhookResult = await callWebhook(rule, matchedLogs);
+          let webhookResult: WebhookResult;
+          try {
+            webhookResult = await callWebhook(rule, matchedLogs);
+          } catch (error) {
+            console.error('Webhook delivery error', {
+              alertId: rule.id,
+              error,
+            });
+            continue;
+          }
           if (!webhookResult.delivered) continue;
 
           await redis.set(
@@ -242,15 +290,11 @@ export async function startAlertConsumer() {
             'EX',
             parseCooldownSeconds(rule.cooldown_period),
           );
-          rule.last_triggered = triggeredAt;
-          const updatedRules = rules.map((r) =>
-            r.id === rule.id ? { ...r, last_triggered: triggeredAt } : r,
-          );
-          await redis.set(redisKey, JSON.stringify(updatedRules));
           await db
             .update(alerts)
             .set({ last_triggered: new Date(triggeredAt) })
             .where(eq(alerts.id, rule.id));
+          await redis.del(redisKey);
         }
       }
       msg.ack();

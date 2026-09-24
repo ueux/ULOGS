@@ -86,20 +86,11 @@ export default function Page() {
       if (!rawKey || rest.length === 0) continue;
       const value = rest.join(":").trim();
       const key = rawKey.trim().toLowerCase();
-      // map synonyms to server-supported keys
-      const mapped =
-        key === "level"
-          ? "type"
-          : key === "service"
-            ? "appName"
-            : key === "message"
-              ? "search"
-              : key;
-
-      if (mapped === "type") out.type = value;
-      else if (mapped === "env" || mapped === "environment") out.env = value;
-      else if (mapped === "appName" || mapped === "app") out.appName = value;
-      else if (mapped === "search") out.search = value;
+      // map synonyms (keys are lowercased above)
+      if (key === "type" || key === "level") out.type = value;
+      else if (key === "env" || key === "environment") out.env = value;
+      else if (key === "appname" || key === "app") out.appName = value;
+      else if (key === "search" || key === "message") out.search = value;
     }
     return out;
   }, []);
@@ -112,11 +103,10 @@ export default function Page() {
 
   const runQuery = () => {
     const parsed = parseQueryFilters(normalizeQuery(query));
-    setFilters((prev) => ({
-      ...prev,
+    setFilters({
       ...parsed, // send explicit keys: type, env, appName, search
       limit: 200,
-    }));
+    });
   };
 
   const clearQuery = () => {

@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   });
   if (type === "stream") {
     const filters = Object.fromEntries(req.nextUrl.searchParams.entries());
-    const { body } = ulogs.stream(filters);
+    const { body } = ulogs.stream(filters, { authToken: token });
 
     return new Response(body, {
       headers: {
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     });
   } else if (type === "logs") {
     const filters = Object.fromEntries(req.nextUrl.searchParams.entries());
-    const logs = await ulogs.get(filters);
+    const logs = await ulogs.get(filters, { authToken: token });
     return Response.json(logs);
   } else {
     return Response.json({ error: "Invalid Request Type" }, { status: 400 });
