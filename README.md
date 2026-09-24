@@ -8,7 +8,15 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 
-ULogs is currently under active development. This repository contains the landing page, authenticated dashboard, and backend service that power the platform. APIs and infrastructure may change while the product moves toward its first production release.
+ULogs is an active monorepo for a log-collection and observability product. The repository currently contains:
+
+- a public marketing site for the product,
+- an authenticated dashboard for users and billing,
+- a NestJS backend for auth, log ingestion, billing, and persistence,
+- a typed Next.js SDK for structured log delivery,
+- local infrastructure for Redis, ClickHouse, NATS, and database access during development.
+
+This project is still moving toward its first production-ready release, so APIs, infrastructure wiring, and deployment details are expected to evolve while the platform is hardened.
 
 ## Contents
 
@@ -78,19 +86,25 @@ The repository contains three independently runnable applications plus an SDK pa
 .
 ├── apps/
 │   ├── landing-page/       # Public Next.js marketing site
-│   └── main-dashboard/     # Authenticated Next.js dashboard
-├── services/                # NestJS API, database, Redis integration, tests
+│   └── main-dashboard/     # Authenticated Next.js dashboard and user workspace
+├── services/               # NestJS API, database layer, Stripe hooks, and local infra
 │   ├── src/
 │   ├── test/
-│   ├── drizzle/             # Generated database migrations
-│   └── docker-compose.yml   # Local Redis, ClickHouse, UI, and NATS services
+│   ├── drizzle/            # Generated database migrations
+│   ├── docker-compose.yml  # Local Redis, ClickHouse, UI, and NATS services
+│   ├── README.md
+│   └── package.json
 ├── sdks/
-│   └── ulogs-next/           # Typed SDK package; private src, distributable dist
-├── testsprite_tests/        # Generated API test plans, cases, and reports
-└── .vscode/                 # Local editor/MCP configuration
+│   └── ulogs-next/         # Typed SDK package; source code + distributable build output
+├── testsprite_tests/       # Generated API test plans, cases, and reports
+├── README.md
+├── AGENTS.md
+├── CLAUDE.md
+├── .vscode/                # Local editor and MCP configuration
+└── .gitignore
 ```
 
-Each application has its own `package.json`, lockfile, TypeScript configuration, and dependency installation. There is no root-level package manager workspace yet.
+Each app and service has its own `package.json`, lockfile, TypeScript configuration, and dependency installation. There is no root-level workspace package manager yet, so install and run commands are executed from each package directory unless the app intentionally exposes a shared script.
 
 ## Prerequisites
 
